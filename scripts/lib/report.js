@@ -94,26 +94,32 @@ function renderUnavailableTable(lines, rows) {
   });
 }
 
-function renderDirectSaleTable(lines, evidence, officialNotices) {
-  if (!(evidence || []).length) return;
-  const groups = new Map();
-  evidence.forEach((row) => {
-    const baseName = baseFundName(row.name);
-    const key = [row.index, row.amount, row.currency, baseName].join("|");
-    if (!groups.has(key)) groups.set(key, { baseName, amount: row.amount, currency: row.currency, codes: [] });
-    if (!groups.get(key).codes.includes(row.code)) groups.get(key).codes.push(row.code);
-  });
-  lines.push("## 基金公司直销公告限额", "");
+function directSaleNote(officialNotices) {
   const managerCoverage = officialNotices && officialNotices.sources && officialNotices.sources.managerWebsites;
   const announcementCoverage = officialNotices && officialNotices.sources && officialNotices.sources.announcementIndex;
   const announcementPartial = announcementCoverage
     && (announcementCoverage.errors > 0 || announcementCoverage.checked < announcementCoverage.eligible);
   const managerPartial = !announcementCoverage && managerCoverage
     && (managerCoverage.errors > 0 || managerCoverage.checked < managerCoverage.supported);
-  let note = "以基金公司官方 APP 实际显示为准。";
-  if (announcementPartial && announcementCoverage.errors === 0) note = "部分直销数据尚未覆盖，以基金公司官方 APP 实际显示为准。";
-  else if (announcementPartial || managerPartial) note = "部分直销数据暂未获取，以基金公司官方 APP 实际显示为准。";
-  lines.push(note, "");
+  if (announcementPartial && announcementCoverage.errors === 0) return "部分直销数据尚未覆盖，以基金公司官方 APP 实际显示为准。";
+  if (announcementPartial || managerPartial) return "部分直销数据暂未获取，以基金公司官方 APP 实际显示为准。";
+  return "以基金公司官方 APP 实际显示为准。";
+}
+
+function renderDirectSaleSection(lines, evidence, officialNotices, indexName) {
+  const indexEvidence = (evidence || []).filter((row) => row.index === indexName);
+  lines.push(`## 基金公司直销｜${INDEX_LABELS[indexName] || indexName}`, "", directSaleNote(officialNotices), "");
+  if (!indexEvidence.length) {
+    lines.push("暂无可展示的直销公告限额。", "");
+    return;
+  }
+  const groups = new Map();
+  indexEvidence.forEach((row) => {
+    const baseName = baseFundName(row.name);
+    const key = [row.index, row.amount, row.currency, baseName].join("|");
+    if (!groups.has(key)) groups.set(key, { baseName, amount: row.amount, currency: row.currency, codes: [] });
+    if (!groups.get(key).codes.includes(row.code)) groups.get(key).codes.push(row.code);
+  });
   lines.push("| 单日申购上限 | 基金 | 代码 |", "| :---: | --- | :---: |");
   [...groups.values()]
     .sort((left, right) => right.amount - left.amount || left.baseName.localeCompare(right.baseName, "zh-CN"))
@@ -135,15 +141,15 @@ function renderCompactMarkdown(payload) {
     const rows = (payload.rows || []).filter((row) => row.index === indexName);
     const limited = sortPurchasableRows(rows);
     const unavailable = rows.filter((row) => !["open", "limited"].includes(row.decisionStatus || row.status));
-    lines.push(`## ${INDEX_LABELS[indexName] || indexName}`, "");
+    lines.push(`## 代销渠道｜${INDEX_LABELS[indexName] || indexName}`, "");
     if (!limited.length) lines.push("没有确认到限额申购记录。", "");
     else {
       renderLimitTable(lines, limited);
       lines.push("");
     }
     if (unavailable.length) lines.push(`其余${INDEX_LABELS[indexName] || indexName}相关基金当前均暂停或暂不可申购。`, "");
+    renderDirectSaleSection(lines, payload.officialChannelEvidence, payload.officialNotices, indexName);
   });
-  renderDirectSaleTable(lines, payload.officialChannelEvidence, payload.officialNotices);
   if ((payload.changes || []).length) {
     lines.push("## 本次变化", "");
     payload.changes.forEach((change) => lines.push(changeLine(change)));
@@ -165,7 +171,7 @@ function renderDetailedMarkdown(payload) {
     const rows = (payload.rows || []).filter((row) => row.index === indexName);
     const limited = sortPurchasableRows(rows);
     const unavailable = rows.filter((row) => !["open", "limited"].includes(row.decisionStatus || row.status));
-    lines.push(`## ${INDEX_LABELS[indexName] || indexName}`, "", "### 当前限额", "");
+    lines.push(`## 代销渠道｜${INDEX_LABELS[indexName] || indexName}`, "", "### 当前限额", "");
     if (!limited.length) lines.push("没有确认到限额申购记录。", "");
     else {
       renderLimitTable(lines, limited);
@@ -177,9 +183,8 @@ function renderDetailedMarkdown(payload) {
       renderUnavailableTable(lines, unavailable);
       lines.push("");
     }
+    renderDirectSaleSection(lines, payload.officialChannelEvidence, payload.officialNotices, indexName);
   });
-
-  renderDirectSaleTable(lines, payload.officialChannelEvidence, payload.officialNotices);
 
   lines.push("## 本次变化", "");
   if (!payload.previousSnapshotFound) lines.push("这是第一次查询：已经保存本次结果，供下次比较。", "");

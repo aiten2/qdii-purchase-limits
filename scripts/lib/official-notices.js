@@ -18,7 +18,7 @@ function postForm(url, fields, options) {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
         "Content-Length": Buffer.byteLength(body),
-        "User-Agent": "qdii-purchase-limits/1.0 (+official-disclosure-query)"
+        "User-Agent": "qdii-purchase-limits (+https://github.com/aiten2/qdii-purchase-limits)"
       }
     }, (response) => {
       let responseBody = "";
@@ -40,7 +40,7 @@ function getText(url, options) {
   return new Promise((resolve, reject) => {
     const request = http.get(new URL(url), {
       timeout: settings.timeoutMs,
-      headers: { "User-Agent": "qdii-purchase-limits/1.0 (+official-disclosure-query)" }
+      headers: { "User-Agent": "qdii-purchase-limits (+https://github.com/aiten2/qdii-purchase-limits)" }
     }, (response) => {
       let body = "";
       response.setEncoding("utf8");
@@ -63,7 +63,7 @@ function getBuffer(url, options, redirectCount) {
     const client = target.protocol === "https:" ? https : http;
     const request = client.get(target, {
       timeout: settings.timeoutMs,
-      headers: { "User-Agent": "qdii-purchase-limits/1.0 (+official-disclosure-query)" }
+      headers: { "User-Agent": "qdii-purchase-limits (+https://github.com/aiten2/qdii-purchase-limits)" }
     }, (response) => {
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();

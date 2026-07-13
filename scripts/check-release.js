@@ -51,7 +51,8 @@ function checkRelease(root, options) {
   const settings = Object.assign({ runTests: true }, options);
   const errors = [];
   const required = [
-    "SKILL.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json", "agents/openai.yaml",
+    "SKILL.md", "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md",
+    "package.json", "package-lock.json", "agents/openai.yaml", ".github/workflows/test.yml", ".github/dependabot.yml",
     "scripts/query-purchase-limits.js", "scripts/run-scheduled.js", "scripts/lib/official-notices.js",
     "scripts/lib/official-pdf.js", "scripts/lib/announcement-index.js", "scripts/lib/query.js", "scripts/lib/report.js"
   ];
@@ -74,15 +75,17 @@ function checkRelease(root, options) {
     if (!/不得用其他网页工具替代脚本/.test(skill)) errors.push("SKILL.md 缺少禁止模型自行浏览替代脚本的约束");
     if (!/Qwen Code[\s\S]*Kimi Code CLI[\s\S]*\/skill:qdii-purchase-limits/.test(skill)) errors.push("SKILL.md 缺少国产 Agent 显式调用说明");
     if (!/无法执行 Node\.js[\s\S]*不得模拟/.test(skill)) errors.push("SKILL.md 缺少不可执行时的降级约束");
+    if (!/默认固定输出四个区块[\s\S]*代销渠道｜纳斯达克100[\s\S]*基金公司直销｜纳斯达克100[\s\S]*代销渠道｜标普500[\s\S]*基金公司直销｜标普500/.test(skill)) errors.push("SKILL.md 缺少四区块固定输出顺序");
   }
   const licensePath = path.join(root, "LICENSE");
   if (fs.existsSync(licensePath) && !/MIT License/.test(fs.readFileSync(licensePath, "utf8"))) errors.push("LICENSE 不是 MIT");
   const major = Number(process.versions.node.split(".")[0]);
-  if (major < 18) errors.push("需要 Node.js 18+");
+  if (major < 22) errors.push("需要 Node.js 22+");
   const packagePath = path.join(root, "package.json");
   if (fs.existsSync(packagePath)) {
     const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
     if (!packageJson.dependencies || packageJson.dependencies["pdfjs-dist"] !== "4.8.69") errors.push("pdfjs-dist 必须锁定为已验证版本 4.8.69");
+    if (!packageJson.engines || packageJson.engines.node !== ">=22") errors.push("package.json 必须要求 Node.js 22+");
   }
   const readmePath = path.join(root, "README.md");
   if (fs.existsSync(readmePath)) {
@@ -96,6 +99,13 @@ function checkRelease(root, options) {
     publicReadmeForbiddenPhrases().forEach((phrase) => {
       if (readme.includes(phrase)) errors.push(`README 含维护过程或内部保证话术：${phrase}`);
     });
+  }
+  const workflowPath = path.join(root, ".github", "workflows", "test.yml");
+  if (fs.existsSync(workflowPath)) {
+    const workflow = fs.readFileSync(workflowPath, "utf8");
+    if (!/node-version: \[22, 24\]/.test(workflow)) errors.push("GitHub Actions 必须测试 Node.js 22 和 24");
+    if (!/actions\/checkout@[0-9a-f]{40} # v7\.0\.0/.test(workflow)) errors.push("actions/checkout 必须固定到已审核的 v7.0.0 提交");
+    if (!/actions\/setup-node@[0-9a-f]{40} # v6\.4\.0/.test(workflow)) errors.push("actions/setup-node 必须固定到已审核的 v6.4.0 提交");
   }
 
   const files = filesUnder(root);

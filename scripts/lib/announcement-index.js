@@ -62,7 +62,7 @@ function fetchAnnouncementText(url, options) {
       timeout: settings.timeoutMs,
       headers: {
         Referer: "https://fundf10.eastmoney.com/",
-        "User-Agent": "qdii-purchase-limits/1.0 (+public-announcement-index)"
+        "User-Agent": "qdii-purchase-limits (+https://github.com/aiten2/qdii-purchase-limits)"
       }
     }, (response) => {
       let body = "";

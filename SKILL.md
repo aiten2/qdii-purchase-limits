@@ -3,9 +3,9 @@ name: qdii-purchase-limits
 description: Use when users ask which Nasdaq 100 or S&P 500 QDII funds can be purchased today, want purchase limits sorted by amount, need direct-sale announcement limits, limit-change detection, or scheduled daily snapshots and change notifications.
 whenToUse: 当用户询问纳指、纳斯达克100或标普500 QDII基金今日申购限额、直销限额、额度变化或每日自动查询时使用。
 license: MIT
-compatibility: Requires Node.js 18+, outbound HTTPS, and a writable user data directory. macOS automation installer is optional.
+compatibility: Requires Node.js 22+, outbound HTTPS, and a writable user data directory. macOS automation installer is optional.
 metadata:
-  version: "1.9.0"
+  version: "1.10.0"
 ---
 
 # QDII Purchase Limits
@@ -50,11 +50,11 @@ node scripts/query-purchase-limits.js --index all --json
 向用户回答时默认使用固定的精简表格，只展示当前申购限额：
 
 1. 说明查询时间和数据是否完整。
-2. 分别用表格列出纳斯达克100和标普500，按额度从大到小。
+2. 默认固定输出四个区块，顺序必须是“代销渠道｜纳斯达克100”“基金公司直销｜纳斯达克100”“代销渠道｜标普500”“基金公司直销｜标普500”；不得把两个指数的直销额度合并成一个表。
 3. 同一基金产品、同一额度的 A/C/D/I 等份额合并为一行。
 4. 主表固定只使用“单日申购上限、基金、代码”三列；不显示链接、渠道名称、购买入口、公告核对过程或额度计算过程。
 5. 默认不展开暂停、不可申购和暂未确认项目，只写“其余相关基金当前均暂停或暂不可申购”；用户明确要求逐只明细时才使用 `--details`，按基金合并输出“状态、基金、代码”三列。
-6. 单独显示“基金公司直销公告限额”三列表格，并紧邻标明“以基金公司官方 APP 实际显示为准”；不得把公告限额写成直销当前可买。
+6. 两个基金公司直销区块分别使用三列表格，并紧邻标明“以基金公司官方 APP 实际显示为准”；不得把公告限额写成直销当前可买。
 7. 有额度或状态变化时追加简短变化列表；没有变化时不增加单独章节。
 8. 数据来源、渠道差异、公告证据和额度计算方式保留在 `latest.json`，默认不进入查询报告；只有用户明确询问这些证据时才单独解释。
 

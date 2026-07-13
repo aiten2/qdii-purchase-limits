@@ -1,11 +1,25 @@
 {
   "name": "qdii-purchase-limits",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "private": true,
   "description": "Agent Skill for querying public QDII purchase limits by sales channel.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aiten2/qdii-purchase-limits.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aiten2/qdii-purchase-limits/issues"
+  },
+  "homepage": "https://github.com/aiten2/qdii-purchase-limits#readme",
+  "keywords": [
+    "agent-skills",
+    "qdii",
+    "nasdaq-100",
+    "sp-500"
+  ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node scripts/check-release.js"

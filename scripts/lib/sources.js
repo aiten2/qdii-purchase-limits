@@ -75,7 +75,7 @@ function requestText(url, options, redirects) {
     const request = transport.get(target, {
       timeout: settings.timeoutMs,
       headers: {
-        "User-Agent": "qdii-purchase-limits/1.0 (+public-data-query)",
+        "User-Agent": "qdii-purchase-limits (+https://github.com/aiten2/qdii-purchase-limits)",
         Referer: "https://fund.eastmoney.com/"
       }
     }, (response) => {

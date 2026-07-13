@@ -15,14 +15,18 @@ test("compact report only shows fund, code, current daily limit, and changes", (
     selection: { index: "all", includeUsd: false, includeEtf: false },
     rows: [
       { index: "nasdaq100", code: "n1", name: "纳指一百A", channel: "天天基金公开销售页", status: "limited", limitAmount: 100, decisionStatus: "limited", decisionLimitAmount: 100, sourceUrl: "https://example.com/n1", officialNotice: { url: "http://example.com/a.pdf" }, officialLimit: { status: "match", amount: 100 } },
-      { index: "nasdaq100", code: "n2", name: "纳指一万A", channel: "基金公司直销", status: "limited", limitAmount: 10000, decisionStatus: "limited", decisionLimitAmount: 10000, sourceUrl: "https://example.com/n2" },
-      { index: "sp500", code: "s1", name: "标普暂停A", channel: "天天基金公开销售页", status: "suspended", limitAmount: null, sourceUrl: "https://example.com/s1" }
+      { index: "nasdaq100", code: "n2", name: "纳指一万A", channel: "公开代销渠道", status: "limited", limitAmount: 10000, decisionStatus: "limited", decisionLimitAmount: 10000, sourceUrl: "https://example.com/n2" },
+      { index: "sp500", code: "s1", name: "标普暂停A", channel: "天天基金公开销售页", status: "suspended", limitAmount: null, sourceUrl: "https://example.com/s1" },
+      { index: "sp500", code: "s2", name: "标普限额A", channel: "天天基金公开销售页", status: "limited", limitAmount: 10, decisionStatus: "limited", decisionLimitAmount: 10, sourceUrl: "https://example.com/s2" }
     ],
     previousSnapshotFound: true,
-    changes: [{ type: "amount-increased", after: { code: "n2", name: "纳指一万A", channel: "基金公司直销", limitAmount: 10000 }, before: { limitAmount: 1000 } }],
-    health: { status: "ok", checked: 3, expected: 3, coverage: 1 },
+    changes: [{ type: "amount-increased", after: { code: "n2", name: "纳指一万A", channel: "公开代销渠道", limitAmount: 10000 }, before: { limitAmount: 1000 } }],
+    health: { status: "ok", checked: 4, expected: 4, coverage: 1 },
     officialNotices: { enabled: true },
-    officialChannelEvidence: [{ index: "nasdaq100", code: "n1", name: "纳指一百A", channel: "基金公司直销", amount: 100000, currency: "CNY", noticeUrl: "http://example.com/direct.pdf" }]
+    officialChannelEvidence: [
+      { index: "nasdaq100", code: "n1", name: "纳指一百A", channel: "基金公司直销", amount: 100000, currency: "CNY", noticeUrl: "http://example.com/direct.pdf" },
+      { index: "sp500", code: "s2", name: "标普限额A", channel: "基金公司直销", amount: 300, currency: "CNY", noticeUrl: "http://example.com/sp.pdf" }
+    ]
   });
 
   assert.match(markdown, /^# 当前申购限额/m);
@@ -34,8 +38,26 @@ test("compact report only shows fund, code, current daily limit, and changes", (
   assert.match(markdown, /额度提高：1000元 -> 1万元｜n2 纳指一万A/);
   assert.match(markdown, /其余标普500相关基金当前均暂停或暂不可申购/);
   assert.doesNotMatch(markdown, /标普暂停/);
-  assert.match(markdown, /## 基金公司直销公告限额/);
+  const sectionHeadings = [
+    "## 代销渠道｜纳斯达克100",
+    "## 基金公司直销｜纳斯达克100",
+    "## 代销渠道｜标普500",
+    "## 基金公司直销｜标普500"
+  ];
+  sectionHeadings.forEach((heading) => assert.match(markdown, new RegExp(heading)));
+  sectionHeadings.slice(1).forEach((heading, index) => {
+    assert.ok(markdown.indexOf(sectionHeadings[index]) < markdown.indexOf(heading));
+  });
+  assert.equal((markdown.match(/\| 单日申购上限 \| 基金 \| 代码 \|/g) || []).length, 4);
+  const nasdaqDirect = markdown.slice(markdown.indexOf(sectionHeadings[1]), markdown.indexOf(sectionHeadings[2]));
+  const sp500Direct = markdown.slice(markdown.indexOf(sectionHeadings[3]));
+  assert.match(nasdaqDirect, /纳指一百/);
+  assert.doesNotMatch(nasdaqDirect, /标普限额/);
+  assert.match(sp500Direct, /标普限额/);
+  assert.doesNotMatch(sp500Direct, /纳指一百/);
+  assert.doesNotMatch(markdown, /## 基金公司直销公告限额/);
   assert.match(markdown, /\| 10万元 \| 纳指一百 \| n1 \|/);
+  assert.match(markdown, /\| 300元 \| 标普限额 \| s2 \|/);
   assert.match(markdown, /以基金公司官方 APP 实际显示为准/);
   assertNoInternalEvidence(markdown);
 });
@@ -54,6 +76,8 @@ test("detailed report groups unavailable funds without links or channel names", 
   });
 
   assert.match(markdown, /## 暂停或暂不可申购/);
+  assert.match(markdown, /## 代销渠道｜纳斯达克100/);
+  assert.match(markdown, /## 基金公司直销｜纳斯达克100/);
   assert.match(markdown, /\| 状态 \| 基金 \| 代码 \|/);
   assert.match(markdown, /\| 暂停申购 \| 暂停基金 \| a1、a2 \|/);
   assert.match(markdown, /\| 暂未确认 \| 未确认基金 \| b1 \|/);
@@ -112,7 +136,7 @@ test("direct-sale announcement rows are grouped without links or purchase claims
       { index: "nasdaq100", code: "a2", name: "测试纳指基金C", channel: "基金公司直销", amount: 100, currency: "CNY", noticeUrl: "http://example.com/a.pdf" }
     ]
   });
-  assert.match(markdown, /## 基金公司直销公告限额/);
+  assert.match(markdown, /## 基金公司直销｜纳斯达克100/);
   assert.match(markdown, /\| 100元 \| 测试纳指基金 \| a1、a2 \|/);
   assert.match(markdown, /以基金公司官方 APP 实际显示为准/);
   assert.doesNotMatch(markdown, /当前可申购|确认可申购/);
