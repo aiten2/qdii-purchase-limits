@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { runQuery } = require("../scripts/lib/query");
+const { OFFICIAL_NOTICE_CACHE_VERSION, runQuery } = require("../scripts/lib/query");
 const { HELP, parseArgs } = require("../scripts/query-purchase-limits");
 
 const catalog = "var r = " + JSON.stringify([
@@ -106,6 +106,38 @@ test("detects a direct-sale announcement amount change", async () => {
   const payload = await runQuery({ index: "nasdaq100", outputDir, queriedAt: "2026-07-12T06:30:00.000Z", fetchText: fixtureFetch(100), officialNotices: true, officialNoticeCacheHours: 0, officialNoticeFetcher: noticeFetcher(100), save: true });
   const directChange = payload.changes.find((change) => (change.after || change.before).channelBucket === "fund-manager-direct");
   assert.equal(directChange.type, "amount-decreased");
+});
+
+test("invalidates announcement caches created by an older parser version", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-old-notice-cache-"));
+  fs.writeFileSync(path.join(outputDir, "official-notice-cache.json"), JSON.stringify({
+    version: OFFICIAL_NOTICE_CACHE_VERSION - 1,
+    byCode: {
+      "019441": {
+        fetchedAt: "2026-07-12T01:00:00.000Z",
+        notice: { id: "stale", parsed: { parsed: true, limits: [] } }
+      }
+    }
+  }));
+  let fetchCount = 0;
+  const freshNotice = {
+    id: "fresh", title: "最新公告", date: "2026-07-12", url: "https://example.com/fresh.pdf",
+    parsed: {
+      parsed: true, effectiveDate: "2026-07-12", shareCodes: ["019441"],
+      limits: [{ scope: "fund-manager-general", channels: [], accountBasis: "single-fund-account-daily-cumulative", effectiveDate: "2026-07-12", perShareLimits: { "019441": { amount: 10, currency: "CNY" } } }],
+      parseWarnings: []
+    }
+  };
+  const payload = await runQuery({
+    index: "nasdaq100", outputDir, queriedAt: "2026-07-12T01:10:00.000Z",
+    fetchText: fixtureFetch(10), officialNotices: true, officialNoticeCacheHours: 6,
+    officialNoticeFetcher: async () => { fetchCount += 1; return { byCode: { "019441": freshNotice }, errors: [] }; },
+    save: true
+  });
+  const cache = JSON.parse(fs.readFileSync(path.join(outputDir, "official-notice-cache.json"), "utf8"));
+  assert.equal(fetchCount, 1);
+  assert.equal(payload.rows[0].officialNotice.id, "fresh");
+  assert.equal(cache.version, OFFICIAL_NOTICE_CACHE_VERSION);
 });
 
 test("does not turn a transient fetch failure into a status change or overwrite the last valid baseline", async () => {

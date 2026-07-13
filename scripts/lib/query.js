@@ -7,6 +7,8 @@ const { managerSourceForFund } = require("./manager-notices");
 const { collectFundStatuses, discoverFunds } = require("./sources");
 const { renderMarkdown } = require("./report");
 
+const OFFICIAL_NOTICE_CACHE_VERSION = 9;
+
 function readJson(filePath, fallback) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -256,7 +258,7 @@ async function runQuery(options) {
   if (settings.officialNotices) {
     const targets = rows;
     const cachePath = path.join(settings.outputDir, "official-notice-cache.json");
-    const cache = readJson(cachePath, { version: 8, byCode: {} });
+    const cache = readJson(cachePath, { version: OFFICIAL_NOTICE_CACHE_VERSION, byCode: {} });
     const nowMs = new Date(queriedAt).getTime();
     const maxAgeMs = settings.officialNoticeCacheHours * 60 * 60 * 1000;
     const byCode = {};
@@ -264,7 +266,7 @@ async function runQuery(options) {
     [...new Map(targets.map((row) => [row.code, row])).values()].forEach((fund) => {
       const cached = cache.byCode && cache.byCode[fund.code];
       const fetchedAt = cached ? new Date(cached.fetchedAt).getTime() : NaN;
-      if (cache.version === 8 && Number.isFinite(fetchedAt) && nowMs - fetchedAt < maxAgeMs) byCode[fund.code] = cached.notice || null;
+      if (cache.version === OFFICIAL_NOTICE_CACHE_VERSION && Number.isFinite(fetchedAt) && nowMs - fetchedAt < maxAgeMs) byCode[fund.code] = cached.notice || null;
       else missing.push(fund);
     });
     const fetched = missing.length
@@ -284,7 +286,7 @@ async function runQuery(options) {
     const officialErrorsByCode = Object.fromEntries(unresolvedErrors.map((error) => [error.code, error.message]));
     missing.forEach((fund) => {
       if (Object.prototype.hasOwnProperty.call(byCode, fund.code)) {
-        cache.version = 8;
+        cache.version = OFFICIAL_NOTICE_CACHE_VERSION;
         cache.byCode[fund.code] = { fetchedAt: queriedAt, notice: byCode[fund.code] || null };
       }
     });
@@ -420,6 +422,7 @@ async function runQuery(options) {
 }
 
 module.exports = {
+  OFFICIAL_NOTICE_CACHE_VERSION,
   applyOfficialDecision,
   loadChannelRows,
   readJson,
