@@ -36,6 +36,16 @@ function inferShareClass(name) {
   return match ? match[1].toUpperCase() : "";
 }
 
+function purchaseStatusText(status) {
+  return {
+    open: "开放申购",
+    limited: "限额申购",
+    suspended: "暂停申购",
+    unavailable: "暂不开放申购",
+    unknown: "状态未知"
+  }[status] || "状态未知";
+}
+
 function parsePurchasePage(html, fund, queriedAt) {
   const text = htmlToText(html);
   const statusIndex = text.indexOf("交易状态");
@@ -59,7 +69,7 @@ function parsePurchasePage(html, fund, queriedAt) {
     channelType: "third-party-public-sales",
     status,
     limitAmount: amount,
-    statusText: segment.slice(0, 140),
+    statusText: purchaseStatusText(status),
     queriedAt,
     sourceUrl: `https://fund.eastmoney.com/${fund.code}.html`,
     dataQuality
@@ -169,5 +179,6 @@ module.exports = {
   inferShareClass,
   parseAmount,
   parseFundCatalog,
-  parsePurchasePage
+  parsePurchasePage,
+  purchaseStatusText
 };

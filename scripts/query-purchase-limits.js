@@ -4,7 +4,7 @@ const path = require("node:path");
 const { renderMarkdown } = require("./lib/report");
 const { runQuery } = require("./lib/query");
 
-const HELP = `QDII 指数基金可买额度查询
+const HELP = `QDII 指数基金申购限额查询
 
 用法：
   node scripts/query-purchase-limits.js [选项]

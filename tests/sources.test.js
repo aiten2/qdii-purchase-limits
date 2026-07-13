@@ -27,6 +27,17 @@ test("parses a limited public sales-channel page with amount and source metadata
   assert.equal(row.queriedAt, queriedAt);
   assert.match(row.sourceUrl, /019441/);
   assert.equal(row.dataQuality, "live-public-page");
+  assert.equal(row.statusText, "限额申购");
+});
+
+test("keeps source-page promotional copy out of structured status text", () => {
+  const row = parsePurchasePage(
+    "<div>交易状态：限大额 单日累计购买上限10元 立即购买 手机也可以买基金 扫码下载手机版</div>",
+    { code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", index: "nasdaq100", currency: "CNY", route: "otc", variant: "standard" },
+    "2026-07-12T06:30:00.000Z"
+  );
+  assert.equal(row.statusText, "限额申购");
+  assert.doesNotMatch(row.statusText, /购买|下载|扫码|手机/);
 });
 
 test("does not mistake a suspended fund with a historical amount for purchasable", () => {

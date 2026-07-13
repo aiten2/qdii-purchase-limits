@@ -20,6 +20,12 @@ test("public README keeps the Agent table focused on installation and invocation
   assert.doesNotMatch(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 调用方式 \| 状态 \|/);
 });
 
+test("CLI help uses the same neutral product title as the README", () => {
+  const { HELP } = require("../scripts/query-purchase-limits");
+  assert.match(HELP, /^QDII 指数基金申购限额查询/);
+  assert.doesNotMatch(HELP, /可买额度查询/);
+});
+
 test("public README centers amount and code columns in the sample report", () => {
   const readme = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
   assert.match(readme, /\| 单日申购上限 \| 基金 \| 代码 \|\n\| :---: \| --- \| :---: \|/);
