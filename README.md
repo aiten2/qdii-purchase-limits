@@ -35,7 +35,7 @@
 
 将下面这段话发送给支持 Agent Skills 和本地命令执行的 AI：
 
-> 请从 https://github.com/aiten2/qdii-purchase-limits 安装这个 Skill，并按照仓库 README 完成安装验证。不要启用自动化或通知。
+> 请从 https://github.com/aiten2/qdii-purchase-limits 安装这个 Skill。
 
 ### 手动安装
 
