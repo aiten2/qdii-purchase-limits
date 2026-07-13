@@ -1,0 +1,45 @@
+name: Bug 报告
+description: 报告查询、解析、排序、变化检测或自动化问题
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: 提交前请移除 token、cookie、webhook、账号信息和本机绝对路径。
+  - type: input
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、Node.js 版本和使用的 Agent。
+      placeholder: macOS 15 / Node.js 22 / Claude Code
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请提供最小、可重复的命令和操作步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 可粘贴已脱敏日志；不要粘贴凭据。
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已运行 `node scripts/check-release.js`。
+          required: true
+        - label: 我已移除凭据和个人信息。
+          required: true

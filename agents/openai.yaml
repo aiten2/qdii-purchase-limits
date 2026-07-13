@@ -1,0 +1,4 @@
+interface:
+  display_name: "QDII Purchase Limits"
+  short_description: "查询纳指与标普QDII申购限额和变化"
+  default_prompt: "使用 $qdii-purchase-limits 查询今天纳斯达克100和标普500 QDII 基金的申购限额；只运行 Skill 自带的查询脚本并原样返回标准输出，不要自行浏览、补算、改写表格或添加链接、销售平台、购买入口、核验过程和推荐性措辞。"
