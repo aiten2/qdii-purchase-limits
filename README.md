@@ -4,6 +4,8 @@
 
 它可以查询当前申购限额、整理基金公司直销公告限额、记录额度变化，并可选启用每日自动查询和变化通知。项目只提供公开信息查询，不提供基金推荐、收益排名、交易信号或投资建议。
 
+代码仓库：[GitHub（主仓库）](https://github.com/aiten2/qdii-purchase-limits)｜[Gitee（国内备用）](https://gitee.com/aiten2/qdii-purchase-limits)
+
 ## 支持的 Agent
 
 | Agent / 工具 | 安装位置或方式 | 使用方式 |
@@ -35,8 +37,16 @@
 
 将下面这段话发送给支持 Agent Skills 和本地命令执行的 AI：
 
+GitHub：
+
 ```text
 请从 https://github.com/aiten2/qdii-purchase-limits 安装这个 Skill。
+```
+
+Gitee（国内备用）：
+
+```text
+请从 https://gitee.com/aiten2/qdii-purchase-limits 安装这个 Skill。
 ```
 
 ### 手动安装
@@ -45,6 +55,13 @@
 
 ```bash
 git clone https://github.com/aiten2/qdii-purchase-limits.git \
+  <你的 Agent Skill 目录>/qdii-purchase-limits
+```
+
+国内访问 GitHub 不稳定时，可改用 Gitee：
+
+```bash
+git clone https://gitee.com/aiten2/qdii-purchase-limits.git \
   <你的 Agent Skill 目录>/qdii-purchase-limits
 ```
 
