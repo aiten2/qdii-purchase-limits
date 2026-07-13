@@ -27,10 +27,7 @@ test("copy-to-AI install prompt contains only the installation request", () => {
   const section = readme.match(/## 复制给 AI 安装([\s\S]*?)### 手动安装/);
   assert.ok(section);
   const prompts = [...section[1].matchAll(/```text\n([\s\S]*?)\n```/g)].map((match) => match[1]);
-  assert.deepEqual(prompts, [
-    "请从 https://github.com/aiten2/qdii-purchase-limits 安装这个 Skill。",
-    "请从 https://gitee.com/aiten2/qdii-purchase-limits 安装这个 Skill。",
-  ]);
+  assert.deepEqual(prompts, ["请从 https://github.com/aiten2/qdii-purchase-limits 安装这个 Skill。"]);
   assert.doesNotMatch(section[1], /^> /m);
 });
 
