@@ -58,6 +58,11 @@ function buildSnapshot(queriedAt, rows) {
   };
 }
 
+function equivalentNonPurchasableStatus(left, right) {
+  const nonPurchasable = new Set(["suspended", "unavailable"]);
+  return nonPurchasable.has(clean(left)) && nonPurchasable.has(clean(right));
+}
+
 function compareSnapshots(before, after) {
   if (!before || !before.byKey) return [];
   const previous = before.byKey;
@@ -68,7 +73,8 @@ function compareSnapshots(before, after) {
     const next = current[key];
     const prior = previous[key];
     if (!prior) return;
-    if (clean(prior.status) !== clean(next.status)) {
+    if (clean(prior.status) !== clean(next.status)
+      && !equivalentNonPurchasableStatus(prior.status, next.status)) {
       changes.push({ type: "status-changed", key, before: prior, after: next });
       return;
     }

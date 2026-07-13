@@ -47,6 +47,18 @@ test("compares status, amount, and channel changes using stable snapshot keys", 
   assert.equal(changes[1].type, "channel-added");
 });
 
+test("does not report a change between equivalent non-purchasable statuses", () => {
+  const before = buildSnapshot("2026-07-13T08:11:42.642Z", [
+    { index: "sp500", code: "018738", channel: "天天基金", status: "unavailable", limitAmount: null }
+  ]);
+  const after = buildSnapshot("2026-07-13T08:16:31.348Z", [
+    { index: "sp500", code: "018738", channel: "天天基金", status: "suspended", limitAmount: null }
+  ]);
+
+  assert.deepEqual(compareSnapshots(before, after), []);
+  assert.deepEqual(compareSnapshots(after, before), []);
+});
+
 test("snapshot keys keep currency, channel bucket, and account basis separate", () => {
   const snapshot = buildSnapshot("2026-07-12T01:10:00.000Z", [
     { index: "nasdaq100", code: "019441", channel: "基金公司直销", channelBucket: "fund-manager-direct", currency: "CNY", accountBasis: "daily", status: "limited", limitAmount: 100 },
