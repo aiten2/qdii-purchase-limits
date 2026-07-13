@@ -27,6 +27,8 @@ test("compact report only shows fund, code, current daily limit, and changes", (
 
   assert.match(markdown, /^# 当前申购限额/m);
   assert.match(markdown, /\| 单日申购上限 \| 基金 \| 代码 \|/);
+  assert.match(markdown, /\| :---: \| --- \| :---: \|/);
+  assert.doesNotMatch(markdown, /\| ---: \| --- \| --- \|/);
   assert.ok(markdown.indexOf("纳指一万") < markdown.indexOf("纳指一百"));
   assert.match(markdown, /\| 1万元 \| 纳指一万 \| n2 \|/);
   assert.match(markdown, /额度提高：1000元 -> 1万元｜n2 纳指一万A/);

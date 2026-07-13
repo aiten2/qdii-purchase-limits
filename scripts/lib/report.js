@@ -80,7 +80,7 @@ function groupUnavailableRows(rows) {
 }
 
 function renderLimitTable(lines, rows) {
-  lines.push("| 单日申购上限 | 基金 | 代码 |", "| ---: | --- | --- |");
+  lines.push("| 单日申购上限 | 基金 | 代码 |", "| :---: | --- | :---: |");
   groupLimitRows(rows).forEach((group) => {
     const amount = group.amountKey === "open" ? "未显示上限" : formatAmount(Number(group.amountKey));
     lines.push(`| ${amount} | ${group.baseName} | ${group.codes.join("、")} |`);
@@ -88,7 +88,7 @@ function renderLimitTable(lines, rows) {
 }
 
 function renderUnavailableTable(lines, rows) {
-  lines.push("| 状态 | 基金 | 代码 |", "| --- | --- | --- |");
+  lines.push("| 状态 | 基金 | 代码 |", "| :---: | --- | :---: |");
   groupUnavailableRows(rows).forEach((group) => {
     lines.push(`| ${STATUS_LABELS[group.status] || group.status} | ${group.baseName} | ${group.codes.join("、")} |`);
   });
@@ -114,7 +114,7 @@ function renderDirectSaleTable(lines, evidence, officialNotices) {
   if (announcementPartial && announcementCoverage.errors === 0) note = "部分直销数据尚未覆盖，以基金公司官方 APP 实际显示为准。";
   else if (announcementPartial || managerPartial) note = "部分直销数据暂未获取，以基金公司官方 APP 实际显示为准。";
   lines.push(note, "");
-  lines.push("| 单日申购上限 | 基金 | 代码 |", "| ---: | --- | --- |");
+  lines.push("| 单日申购上限 | 基金 | 代码 |", "| :---: | --- | :---: |");
   [...groups.values()]
     .sort((left, right) => right.amount - left.amount || left.baseName.localeCompare(right.baseName, "zh-CN"))
     .forEach((group) => lines.push(`| ${formatCurrencyAmount(group.amount, group.currency)} | ${group.baseName} | ${group.codes.join("、")} |`));

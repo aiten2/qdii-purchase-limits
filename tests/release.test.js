@@ -21,6 +21,12 @@ test("public README excludes maintainer-only assurance wording", () => {
   });
 });
 
+test("public README centers amount and code columns in the sample report", () => {
+  const readme = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
+  assert.match(readme, /\| 单日申购上限 \| 基金 \| 代码 \|\n\| :---: \| --- \| :---: \|/);
+  assert.doesNotMatch(readme, /\| ---: \| --- \| --- \|/);
+});
+
 test("release file discovery ignores git metadata and runtime output folders", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-release-files-"));
   fs.mkdirSync(path.join(root, ".git", "hooks"), { recursive: true });
