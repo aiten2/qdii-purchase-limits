@@ -8,6 +8,7 @@ const { collectFundStatuses, discoverFunds } = require("./sources");
 const { renderMarkdown } = require("./report");
 
 const OFFICIAL_NOTICE_CACHE_VERSION = 10;
+const SUPPORTS_POSIX_PERMISSIONS = process.platform !== "win32";
 
 function readJson(filePath, fallback) {
   try {
@@ -18,12 +19,14 @@ function readJson(filePath, fallback) {
 }
 
 function writeAtomic(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-  fs.chmodSync(path.dirname(filePath), 0o700);
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, SUPPORTS_POSIX_PERMISSIONS ? { recursive: true, mode: 0o700 } : { recursive: true });
+  if (SUPPORTS_POSIX_PERMISSIONS) fs.chmodSync(directory, 0o700);
   const tempPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tempPath, content, { encoding: "utf8", mode: 0o600 });
+  const writeOptions = SUPPORTS_POSIX_PERMISSIONS ? { encoding: "utf8", mode: 0o600 } : { encoding: "utf8" };
+  fs.writeFileSync(tempPath, content, writeOptions);
   fs.renameSync(tempPath, filePath);
-  fs.chmodSync(filePath, 0o600);
+  if (SUPPORTS_POSIX_PERMISSIONS) fs.chmodSync(filePath, 0o600);
 }
 
 function scopeKey(options) {

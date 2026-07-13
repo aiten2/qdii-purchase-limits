@@ -84,6 +84,9 @@ function checkRelease(root, options) {
   if (fs.existsSync(workflowPath)) {
     const workflow = fs.readFileSync(workflowPath, "utf8");
     if (!/node-version: \[22, 24\]/.test(workflow)) errors.push("GitHub Actions 必须测试 Node.js 22 和 24");
+    if (!/os: \[ubuntu-latest, windows-latest\]/.test(workflow) || !/runs-on: \$\{\{ matrix\.os \}\}/.test(workflow)) {
+      errors.push("GitHub Actions 必须测试 Linux 和 Windows");
+    }
     if (!/actions\/checkout@[0-9a-f]{40} # v7\.0\.0/.test(workflow)) errors.push("actions/checkout 必须固定到已审核的 v7.0.0 提交");
     if (!/actions\/setup-node@[0-9a-f]{40} # v6\.4\.0/.test(workflow)) errors.push("actions/setup-node 必须固定到已审核的 v6.4.0 提交");
     if (!/check-git-history\.js --public-release/.test(workflow)) errors.push("GitHub Actions 必须执行公开发布模式的完整历史扫描");

@@ -16,6 +16,12 @@ test("public skill package passes release gates", () => {
   assert.ok(result.checkedFiles >= 8);
 });
 
+test("GitHub Actions tests supported Node.js versions on Linux and Windows", () => {
+  const workflow = fs.readFileSync(path.resolve(__dirname, "..", ".github", "workflows", "test.yml"), "utf8");
+  assert.match(workflow, /os: \[ubuntu-latest, windows-latest\]/);
+  assert.match(workflow, /runs-on: \$\{\{ matrix\.os \}\}/);
+});
+
 test("public README keeps the Agent table focused on installation and use", () => {
   const readme = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
   assert.match(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 使用方式 \|/);

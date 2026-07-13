@@ -24,11 +24,12 @@ function fixtureFetch(amount) {
 }
 
 test("parses public CLI options", () => {
-  const args = parseArgs(["--index", "sp500", "--include-usd", "--include-etf", "--output-dir", "/tmp/qdii", "--json", "--no-save"]);
+  const requestedOutputDir = path.join(os.tmpdir(), "qdii");
+  const args = parseArgs(["--index", "sp500", "--include-usd", "--include-etf", "--output-dir", requestedOutputDir, "--json", "--no-save"]);
   assert.equal(args.index, "sp500");
   assert.equal(args.includeUsd, true);
   assert.equal(args.includeEtf, true);
-  assert.equal(args.outputDir, "/tmp/qdii");
+  assert.equal(args.outputDir, path.resolve(requestedOutputDir));
   assert.equal(args.json, true);
   assert.equal(args.save, false);
   assert.equal(args.officialNotices, true);
@@ -79,7 +80,7 @@ test("accepts only unexpired user-verified channel records", async () => {
   assert.ok(payload.warnings.some((warning) => warning.includes("已过期")));
 });
 
-test("sanitizes custom source URLs and writes saved data with private permissions", async () => {
+test("sanitizes custom source URLs and writes saved data with platform-appropriate permissions", async () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-private-output-"));
   const channelsFile = path.join(outputDir, "channels.json");
   fs.writeFileSync(channelsFile, JSON.stringify([
@@ -90,8 +91,11 @@ test("sanitizes custom source URLs and writes saved data with private permission
   const custom = payload.rows.find((row) => row.channel === "示例银行");
   assert.equal(custom.sourceUrl, "https://example.com/path");
   assert.equal(payload.rows.some((row) => row.channel === "认证链接"), false);
-  assert.equal(fs.statSync(outputDir).mode & 0o777, 0o700);
-  assert.equal(fs.statSync(path.join(outputDir, "latest.json")).mode & 0o777, 0o600);
+  assert.ok(fs.existsSync(path.join(outputDir, "latest.json")));
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(outputDir).mode & 0o777, 0o700);
+    assert.equal(fs.statSync(path.join(outputDir, "latest.json")).mode & 0o777, 0o600);
+  }
 });
 
 test("detects a direct-sale announcement amount change", async () => {
