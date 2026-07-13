@@ -22,6 +22,13 @@ test("GitHub Actions tests supported Node.js versions on Linux and Windows", () 
   assert.match(workflow, /runs-on: \$\{\{ matrix\.os \}\}/);
 });
 
+test("repository keeps executable and metadata files on stable LF line endings", () => {
+  const attributes = fs.readFileSync(path.resolve(__dirname, "..", ".gitattributes"), "utf8");
+  ["*.js", "*.md", "*.yml", "*.yaml", "*.json"].forEach((pattern) => {
+    assert.match(attributes, new RegExp(`^${pattern.replace("*", "\\*")} text eol=lf$`, "m"));
+  });
+});
+
 test("public README keeps the Agent table focused on installation and use", () => {
   const readme = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
   assert.match(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 使用方式 \|/);

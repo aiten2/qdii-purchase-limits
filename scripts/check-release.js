@@ -3,6 +3,10 @@ const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
+function readText(filePath) {
+  return fs.readFileSync(filePath, "utf8").replace(/\r\n?/g, "\n");
+}
+
 function filesUnder(root) {
   const files = [];
   function walk(directory) {
@@ -22,7 +26,7 @@ function checkRelease(root, options) {
   const errors = [];
   const required = [
     "SKILL.md", "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md",
-    "package.json", "package-lock.json", "agents/openai.yaml", ".github/workflows/test.yml", ".github/dependabot.yml",
+    "package.json", "package-lock.json", ".gitattributes", "agents/openai.yaml", ".github/workflows/test.yml", ".github/dependabot.yml",
     "scripts/query-purchase-limits.js", "scripts/run-scheduled.js", "scripts/lib/official-notices.js",
     "scripts/lib/official-pdf.js", "scripts/lib/announcement-index.js", "scripts/lib/query.js", "scripts/lib/report.js",
     "scripts/check-git-history.js", "scripts/check-github-releases.js"
@@ -32,7 +36,7 @@ function checkRelease(root, options) {
   });
   const skillPath = path.join(root, "SKILL.md");
   if (fs.existsSync(skillPath)) {
-    const skill = fs.readFileSync(skillPath, "utf8");
+    const skill = readText(skillPath);
     const frontmatter = skill.match(/^---\n([\s\S]*?)\n---/);
     if (!frontmatter) errors.push("SKILL.md 缺少 YAML frontmatter");
     else {
@@ -53,15 +57,15 @@ function checkRelease(root, options) {
     if (!/默认固定输出四个区块[\s\S]*代销渠道｜纳斯达克100[\s\S]*基金公司直销｜纳斯达克100[\s\S]*代销渠道｜标普500[\s\S]*基金公司直销｜标普500/.test(skill)) errors.push("SKILL.md 缺少四区块固定输出顺序");
   }
   const licensePath = path.join(root, "LICENSE");
-  if (fs.existsSync(licensePath) && !/MIT License/.test(fs.readFileSync(licensePath, "utf8"))) errors.push("LICENSE 不是 MIT");
+  if (fs.existsSync(licensePath) && !/MIT License/.test(readText(licensePath))) errors.push("LICENSE 不是 MIT");
   const major = Number(process.versions.node.split(".")[0]);
   if (major < 22) errors.push("需要 Node.js 22+");
   const packagePath = path.join(root, "package.json");
   if (fs.existsSync(packagePath)) {
-    const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+    const packageJson = JSON.parse(readText(packagePath));
     const lockPath = path.join(root, "package-lock.json");
-    const lockJson = fs.existsSync(lockPath) ? JSON.parse(fs.readFileSync(lockPath, "utf8")) : null;
-    const skill = fs.existsSync(skillPath) ? fs.readFileSync(skillPath, "utf8") : "";
+    const lockJson = fs.existsSync(lockPath) ? JSON.parse(readText(lockPath)) : null;
+    const skill = fs.existsSync(skillPath) ? readText(skillPath) : "";
     const skillVersion = skill.match(/^\s+version:\s*["']?([^"'\s]+)["']?\s*$/m);
     if (!lockJson || lockJson.version !== packageJson.version || !lockJson.packages || lockJson.packages[""].version !== packageJson.version) {
       errors.push("package.json 与 package-lock.json 版本不一致");
@@ -72,7 +76,7 @@ function checkRelease(root, options) {
   }
   const readmePath = path.join(root, "README.md");
   if (fs.existsSync(readmePath)) {
-    const readme = fs.readFileSync(readmePath, "utf8");
+    const readme = readText(readmePath);
     ["Qwen Code", "Kimi Code CLI", "CodeBuddy Code", "Qoder IDE / CLI", "CodeArts Doer", "WorkBuddy", "TRAE / TRAE CN"].forEach((name) => {
       if (!readme.includes(name)) errors.push(`README 缺少国产 Agent 适配说明：${name}`);
     });
@@ -82,7 +86,7 @@ function checkRelease(root, options) {
   }
   const workflowPath = path.join(root, ".github", "workflows", "test.yml");
   if (fs.existsSync(workflowPath)) {
-    const workflow = fs.readFileSync(workflowPath, "utf8");
+    const workflow = readText(workflowPath);
     if (!/node-version: \[22, 24\]/.test(workflow)) errors.push("GitHub Actions 必须测试 Node.js 22 和 24");
     if (!/os: \[ubuntu-latest, windows-latest\]/.test(workflow) || !/runs-on: \$\{\{ matrix\.os \}\}/.test(workflow)) {
       errors.push("GitHub Actions 必须测试 Linux 和 Windows");
@@ -94,8 +98,15 @@ function checkRelease(root, options) {
   }
   const dependabotPath = path.join(root, ".github", "dependabot.yml");
   if (fs.existsSync(dependabotPath)) {
-    const dependabot = fs.readFileSync(dependabotPath, "utf8");
+    const dependabot = readText(dependabotPath);
     if (!/package-ecosystem:\s*npm/.test(dependabot)) errors.push("Dependabot 必须检查 npm 依赖");
+  }
+  const attributesPath = path.join(root, ".gitattributes");
+  if (fs.existsSync(attributesPath)) {
+    const attributes = readText(attributesPath);
+    ["*.js", "*.md", "*.yml", "*.yaml", "*.json"].forEach((pattern) => {
+      if (!attributes.split("\n").includes(`${pattern} text eol=lf`)) errors.push(`.gitattributes 缺少 LF 规则：${pattern}`);
+    });
   }
 
   const files = filesUnder(root);
@@ -103,7 +114,7 @@ function checkRelease(root, options) {
     const relative = path.relative(root, file);
     return !relative.startsWith(`tests${path.sep}`) && relative !== path.join("scripts", "check-release.js");
   }).forEach((file) => {
-    const text = fs.readFileSync(file, "utf8");
+    const text = readText(file);
     const relative = path.relative(root, file);
     const unixHomePattern = new RegExp(["", "Users", ""].join("\\/"));
     if (unixHomePattern.test(text) || /[A-Za-z]:\\|(?:require|path\.join|cwd)[^\n]{0,80}["'`]old(?:\/|["'`])/m.test(text)) errors.push(`${relative} 含本机绝对路径或非公开工程依赖`);
