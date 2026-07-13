@@ -22,6 +22,14 @@ test("public README keeps the Agent table focused on installation and use", () =
   assert.doesNotMatch(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 使用方式 \| 状态 \|/);
 });
 
+test("copy-to-AI install prompt stays concise and delegates details to the README", () => {
+  const readme = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
+  const section = readme.match(/## 复制给 AI 安装([\s\S]*?)### 手动安装/);
+  assert.ok(section);
+  assert.match(section[1], /按照仓库 README 完成安装验证/);
+  assert.doesNotMatch(section[1], /确认 `SKILL\.md`|npm ci|npm test|告诉我安装位置/);
+});
+
 test("CLI help uses the same neutral product title as the README", () => {
   const { HELP } = require("../scripts/query-purchase-limits");
   assert.match(HELP, /^QDII 指数基金申购限额查询/);

@@ -35,7 +35,7 @@
 
 将下面这段话发送给支持 Agent Skills 和本地命令执行的 AI：
 
-> 请从 https://github.com/aiten2/qdii-purchase-limits 安装 `qdii-purchase-limits` Skill。请使用你当前 Agent 的官方 Skill 目录并克隆完整仓库，确认 `SKILL.md` 和 `scripts/query-purchase-limits.js` 均存在，在 Skill 目录运行 `npm ci --omit=optional --ignore-scripts` 和 `npm test`，然后告诉我安装位置和验证结果。不要启用定时任务或配置通知。
+> 请从 https://github.com/aiten2/qdii-purchase-limits 安装这个 Skill，并按照仓库 README 完成安装验证。不要启用自动化或通知。
 
 ### 手动安装
 
