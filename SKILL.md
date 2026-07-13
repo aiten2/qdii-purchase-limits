@@ -2,7 +2,6 @@
 name: qdii-purchase-limits
 description: Use when users ask which Nasdaq 100 or S&P 500 QDII funds can be purchased today, want purchase limits sorted by amount, need direct-sale announcement limits, limit-change detection, or scheduled daily snapshots and change notifications.
 license: MIT
-compatibility: Requires Node.js 22+, outbound HTTPS, and a writable user data directory. macOS automation installer is optional.
 metadata:
   version: "1.12.0"
 ---
