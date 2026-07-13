@@ -7,7 +7,7 @@ const { managerSourceForFund } = require("./manager-notices");
 const { collectFundStatuses, discoverFunds } = require("./sources");
 const { renderMarkdown } = require("./report");
 
-const OFFICIAL_NOTICE_CACHE_VERSION = 9;
+const OFFICIAL_NOTICE_CACHE_VERSION = 10;
 
 function readJson(filePath, fallback) {
   try {
@@ -255,6 +255,8 @@ async function runQuery(options) {
   });
   let officialNotices = { enabled: settings.officialNotices, checked: 0, found: 0, errors: 0 };
   let officialChannelEvidence = [];
+  let pendingOfficialCache = null;
+  let pendingOfficialCachePath = null;
   if (settings.officialNotices) {
     const targets = rows;
     const cachePath = path.join(settings.outputDir, "official-notice-cache.json");
@@ -290,7 +292,10 @@ async function runQuery(options) {
         cache.byCode[fund.code] = { fetchedAt: queriedAt, notice: byCode[fund.code] || null };
       }
     });
-    if (settings.save && missing.length) writeAtomic(cachePath, `${JSON.stringify(cache, null, 2)}\n`);
+    if (missing.length) {
+      pendingOfficialCache = cache;
+      pendingOfficialCachePath = cachePath;
+    }
     rows = rows.map((row) => {
       const officialNotice = byCode[row.code] || null;
       const withOfficial = Object.assign({}, row, {
@@ -417,6 +422,9 @@ async function runQuery(options) {
     health,
     exitCode: health.status === "ok" ? 0 : 2
   };
+  if (settings.save && health.status === "ok" && pendingOfficialCache && pendingOfficialCachePath) {
+    writeAtomic(pendingOfficialCachePath, `${JSON.stringify(pendingOfficialCache, null, 2)}\n`);
+  }
   if (settings.save) savePayload(settings.outputDir, scope, payload, snapshot, previousState, settings.historyLimit, health.status === "ok");
   return payload;
 }

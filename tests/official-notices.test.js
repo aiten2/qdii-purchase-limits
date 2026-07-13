@@ -7,9 +7,26 @@ const {
   classifyNoticeTitle,
   collectLatestOfficialNotices,
   findLatestPurchaseNotice,
+  getBuffer,
   mergeOfficialNoticeEvents,
   selectManagerFallbackFunds
 } = require("../scripts/lib/official-notices");
+
+test("retries a transient official PDF HTTP failure", async () => {
+  let attempts = 0;
+  const buffer = await getBuffer("https://example.com/notice.pdf", {
+    retries: 2,
+    retryBaseMs: 0,
+    requestBuffer: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("官方公告 PDF HTTP 567");
+      return Buffer.from("pdf");
+    }
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(buffer.toString(), "pdf");
+});
 
 test("rejects HTTPS-to-HTTP announcement redirects", () => {
   assert.doesNotThrow(() => assertRedirectAllowed("https://example.com/a.pdf", "https://cdn.example.com/a.pdf"));

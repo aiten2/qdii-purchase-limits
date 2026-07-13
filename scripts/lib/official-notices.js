@@ -4,8 +4,7 @@ const { extractPdfText, parseOfficialNoticeText } = require("./official-pdf");
 const { collectManagerSiteNoticeEvents, managerSourceForFund } = require("./manager-notices");
 const { collectAnnouncementIndexNoticeEvents } = require("./announcement-index");
 
-function getBuffer(url, options, redirectCount) {
-  const settings = Object.assign({ timeoutMs: 20000, maxPdfBytes: 8 * 1024 * 1024 }, options);
+function requestBuffer(url, settings, redirectCount) {
   const redirects = redirectCount || 0;
   return new Promise((resolve, reject) => {
     const target = new URL(url);
@@ -25,7 +24,7 @@ function getBuffer(url, options, redirectCount) {
         }
         const redirectUrl = new URL(response.headers.location, target).toString();
         assertRedirectAllowed(target.toString(), redirectUrl);
-        resolve(getBuffer(redirectUrl, settings, redirects + 1));
+        resolve(requestBuffer(redirectUrl, settings, redirects + 1));
         return;
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -45,6 +44,32 @@ function getBuffer(url, options, redirectCount) {
     request.on("timeout", () => request.destroy(new Error("官方公告 PDF 请求超时")));
     request.on("error", reject);
   });
+}
+
+function isRetryablePdfError(error) {
+  const message = String(error && error.message || "");
+  return /HTTP (?:429|5\d\d)|请求超时|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up/i.test(message);
+}
+
+async function getBuffer(url, options) {
+  const settings = Object.assign({
+    timeoutMs: 20000,
+    maxPdfBytes: 8 * 1024 * 1024,
+    retries: 2,
+    retryBaseMs: 500
+  }, options);
+  const request = settings.requestBuffer || requestBuffer;
+  let lastError;
+  for (let attempt = 0; attempt <= settings.retries; attempt += 1) {
+    try {
+      return await request(url, settings, 0);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= settings.retries || !isRetryablePdfError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, settings.retryBaseMs * (attempt + 1)));
+    }
+  }
+  throw lastError;
 }
 
 function assertRedirectAllowed(fromUrl, toUrl) {

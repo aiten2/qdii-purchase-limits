@@ -140,6 +140,38 @@ test("invalidates announcement caches created by an older parser version", async
   assert.equal(cache.version, OFFICIAL_NOTICE_CACHE_VERSION);
 });
 
+test("does not replace the official notice cache after a degraded query", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-degraded-notice-cache-"));
+  const cachePath = path.join(outputDir, "official-notice-cache.json");
+  const originalCache = `${JSON.stringify({
+    version: OFFICIAL_NOTICE_CACHE_VERSION,
+    byCode: {
+      "019441": { fetchedAt: "2026-07-12T00:00:00.000Z", notice: { id: "known-good" } }
+    }
+  }, null, 2)}\n`;
+  fs.writeFileSync(cachePath, originalCache);
+  const notice = {
+    id: "fresh", title: "最新公告", date: "2026-07-12", url: "https://example.com/fresh.pdf",
+    parsed: {
+      parsed: true, effectiveDate: "2026-07-12", shareCodes: ["019441"],
+      limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "019441": { amount: 10, currency: "CNY" } } }],
+      parseWarnings: []
+    }
+  };
+  const payload = await runQuery({
+    index: "all", outputDir, queriedAt: "2026-07-12T06:30:00.000Z",
+    fetchText: fixtureFetch(10), officialNotices: true, officialNoticeCacheHours: 0,
+    officialNoticeFetcher: async () => ({
+      byCode: { "019441": notice },
+      errors: [{ code: "017641", source: "announcement-index", message: "官方公告 PDF HTTP 567" }]
+    }),
+    save: true
+  });
+
+  assert.equal(payload.health.status, "degraded");
+  assert.equal(fs.readFileSync(cachePath, "utf8"), originalCache);
+});
+
 test("does not turn a transient fetch failure into a status change or overwrite the last valid baseline", async () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-transient-"));
   await runQuery({ index: "all", includeUsd: false, includeEtf: false, outputDir, queriedAt: "2026-07-12T01:10:00.000Z", fetchText: fixtureFetch(100), save: true });

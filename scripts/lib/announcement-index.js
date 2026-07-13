@@ -124,11 +124,23 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
   const errors = [];
   const checkedCodes = new Set();
   for (const groupFunds of groups.values()) {
+    const noticeMap = new Map();
+    const indexErrors = new Map();
+    for (const fund of groupFunds) {
+      try {
+        const source = await (settings.fetchText || fetchAnnouncementText)(buildAnnouncementApiUrl(fund.code), settings);
+        checkedCodes.add(fund.code);
+        parseAnnouncementIndex(source, settings).slice(0, settings.maxNotices).forEach((notice) => {
+          if (!noticeMap.has(notice.id)) noticeMap.set(notice.id, notice);
+        });
+      } catch (error) {
+        indexErrors.set(fund.code, error.message);
+      }
+    }
     try {
-      const representative = groupFunds[0];
-      const source = await (settings.fetchText || fetchAnnouncementText)(buildAnnouncementApiUrl(representative.code), settings);
-      groupFunds.forEach((fund) => checkedCodes.add(fund.code));
-      const notices = parseAnnouncementIndex(source, settings).slice(0, settings.maxNotices);
+      const notices = [...noticeMap.values()].sort((left, right) => (
+        String(right.date).localeCompare(String(left.date)) || String(right.id).localeCompare(String(left.id))
+      ));
       const directNotices = notices.filter((notice) => /直销|电子交易平台|网上交易/.test(notice.title));
       const generalNotices = notices.filter((notice) => !directNotices.includes(notice));
       const orderedNotices = directNotices.concat(generalNotices);
@@ -160,6 +172,10 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
         }
       }
       groupFunds.forEach((fund) => {
+        if (indexErrors.has(fund.code)) {
+          errors.push({ code: fund.code, source: "announcement-index", stage: "index", message: indexErrors.get(fund.code) });
+          return;
+        }
         const matching = events.filter((event) => eventCoveredCodes(event).has(fund.code));
         const latestMatchingDate = matching.map((event) => event.date).filter(Boolean).sort().reverse()[0] || null;
         const blockingFailures = latestMatchingDate

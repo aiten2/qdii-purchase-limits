@@ -74,12 +74,53 @@ test("collects and parses announcement events without manual web browsing", asyn
     })
   });
 
-  assert.equal(indexRequests, 1);
+  assert.equal(indexRequests, 2);
   assert.deepEqual(result.coverage, { eligible: 2, checked: 2, found: 2, errors: 0 });
   assert.equal(result.byCode["015299"][0].parsed.limits[0].perShareLimits["015299"].amount, 300);
   assert.equal(result.byCode["015299"][0].parsed.announcementDate, "2026-07-06");
   assert.equal(result.byCode["015299"][0].parsed.parsed, true);
   assert.equal(result.byCode["015300"][0].source, "公开公告索引");
+});
+
+test("discovers share-specific notices from every share-code index", async () => {
+  const funds = [
+    { code: "006479", name: "测试纳斯达克100基金C", index: "nasdaq100" },
+    { code: "270042", name: "测试纳斯达克100基金A", index: "nasdaq100" },
+    { code: "021778", name: "测试纳斯达克100基金F", index: "nasdaq100" }
+  ];
+  let indexRequests = 0;
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    fetchText: async (url) => {
+      indexRequests += 1;
+      const isFShare = url.includes("fundcode=021778");
+      return JSON.stringify({ ErrCode: 0, Data: [isFShare
+        ? { FUNDCODE: "021778", TITLE: "F类基金份额调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-07-10", ID: "AN202607100000000001" }
+        : { FUNDCODE: "006479", TITLE: "人民币份额调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2025-10-30", ID: "AN202510300000000001" }
+      ] });
+    },
+    fetchBuffer: async (url) => Buffer.from(url.includes("20260710") ? "f" : "ac"),
+    extractPdfText: async (buffer) => buffer.toString(),
+    parseOfficialNoticeText: (text) => ({
+      parsed: true,
+      announcementDate: text === "f" ? "2026-07-10" : "2025-10-30",
+      effectiveDate: text === "f" ? "2026-07-13" : "2025-10-31",
+      shareCodes: text === "f" ? ["021778"] : ["006479", "270042"],
+      limits: [{
+        scope: "fund-manager-general",
+        channels: [],
+        perShareLimits: text === "f"
+          ? { "021778": { amount: 100, currency: "CNY" } }
+          : { "006479": { amount: 10, currency: "CNY" }, "270042": { amount: 10, currency: "CNY" } }
+      }],
+      parseWarnings: []
+    })
+  });
+
+  assert.equal(indexRequests, 3);
+  assert.deepEqual(result.coverage, { eligible: 3, checked: 3, found: 3, errors: 0 });
+  assert.equal(result.byCode["006479"].length, 1);
+  assert.equal(result.byCode["270042"].length, 1);
+  assert.equal(result.byCode["021778"][0].parsed.limits[0].perShareLimits["021778"].amount, 100);
 });
 
 test("keeps full-suspension events that have share codes but no amount", async () => {
