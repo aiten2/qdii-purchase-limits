@@ -46,3 +46,12 @@ test("compares status, amount, and channel changes using stable snapshot keys", 
   assert.equal(changes[0].type, "amount-decreased");
   assert.equal(changes[1].type, "channel-added");
 });
+
+test("snapshot keys keep currency, channel bucket, and account basis separate", () => {
+  const snapshot = buildSnapshot("2026-07-12T01:10:00.000Z", [
+    { index: "nasdaq100", code: "019441", channel: "基金公司直销", channelBucket: "fund-manager-direct", currency: "CNY", accountBasis: "daily", status: "limited", limitAmount: 100 },
+    { index: "nasdaq100", code: "019441", channel: "基金公司直销", channelBucket: "fund-manager-direct", currency: "USD", accountBasis: "daily", status: "limited", limitAmount: 10 }
+  ]);
+  assert.equal(snapshot.version, 2);
+  assert.equal(Object.keys(snapshot.byKey).length, 2);
+});

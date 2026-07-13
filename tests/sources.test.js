@@ -5,7 +5,8 @@ const path = require("node:path");
 
 const {
   parseFundCatalog,
-  parsePurchasePage
+  parsePurchasePage,
+  validateSourceTarget
 } = require("../scripts/lib/sources");
 
 const fixture = (name) => fs.readFileSync(path.join(__dirname, "fixtures", name), "utf8");
@@ -74,4 +75,11 @@ test("does not call a limited fund verified when no limit amount can be extracte
   );
   assert.equal(row.status, "unknown");
   assert.equal(row.dataQuality, "limit-amount-missing");
+});
+
+test("accepts only HTTPS Eastmoney public source targets", () => {
+  assert.equal(validateSourceTarget("https://fund.eastmoney.com/000001.html").hostname, "fund.eastmoney.com");
+  assert.throws(() => validateSourceTarget("http://fund.eastmoney.com/000001.html"), /HTTPS/);
+  assert.throws(() => validateSourceTarget("https://example.com/redirect"), /不在允许范围/);
+  assert.throws(() => validateSourceTarget("https://user:pass@fund.eastmoney.com/000001.html"), /认证信息/);
 });

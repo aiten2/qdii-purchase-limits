@@ -28,4 +28,8 @@ jobs:
       - name: Run offline release checks
         run: node scripts/check-release.js
       - name: Scan complete Git history for credentials
-        run: node scripts/check-git-history.js
+        run: node scripts/check-git-history.js --public-release
+      - name: Audit GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-github-releases.js

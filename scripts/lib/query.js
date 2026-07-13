@@ -16,10 +16,12 @@ function readJson(filePath, fallback) {
 }
 
 function writeAtomic(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  fs.chmodSync(path.dirname(filePath), 0o700);
   const tempPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tempPath, content, "utf8");
+  fs.writeFileSync(tempPath, content, { encoding: "utf8", mode: 0o600 });
   fs.renameSync(tempPath, filePath);
+  fs.chmodSync(filePath, 0o600);
 }
 
 function scopeKey(options) {
@@ -55,7 +57,9 @@ function buildOfficialChannelEvidence(rows, queriedAt, timezone) {
       status: "limited",
       limitAmount: null
     }, notice.parsed, queriedAt, timezone);
+    const accountBasis = current.accountBasis || "unknown";
     if (!Number.isFinite(current.amount)
+      || !String(accountBasis).startsWith("single-fund-account-daily-cumulative")
       || ["not-comparable-channel", "official-suspended", "pending", "unknown", "share-not-covered"].includes(current.status)) return;
     const key = [row.code, current.currency, current.amount, current.noticeUrl || notice.url].join("|");
     if (seen.has(key)) return;
@@ -67,7 +71,7 @@ function buildOfficialChannelEvidence(rows, queriedAt, timezone) {
       channel: "基金公司直销",
       amount: current.amount,
       currency: current.currency,
-      accountBasis: current.accountBasis || "unknown",
+      accountBasis,
       effectiveDate: current.effectiveDate,
       noticeDate: current.noticeDate || notice.date,
       noticeUrl: current.noticeUrl || notice.url,
@@ -94,13 +98,13 @@ function applyOfficialDecision(row, officialLimit) {
     }
     return result;
   };
+  if (row.officialNoticeError) return blockUnverifiedPurchase("official-query-failed");
   if (officialLimit && officialLimit.status === "official-suspended") {
     result.decisionStatus = "suspended";
     result.decisionLimitAmount = null;
     result.decisionBasis = "official-suspended";
     return result;
   }
-  if (row.officialNoticeError) return blockUnverifiedPurchase("official-query-failed");
   if (!row.officialNotice) return blockUnverifiedPurchase("official-not-found");
   if (!officialLimit) return blockUnverifiedPurchase("official-unverified");
   if (["unknown", "share-not-covered", "pending"].includes(officialLimit.status)) {
@@ -125,7 +129,7 @@ function applyOfficialDecision(row, officialLimit) {
 function loadChannelRows(filePath, selectedFunds, queriedAt, warnings) {
   if (!filePath) return [];
   const raw = readJson(filePath, null);
-  if (!Array.isArray(raw)) throw new Error(`渠道文件必须是 JSON 数组：${filePath}`);
+  if (!Array.isArray(raw)) throw new Error(`渠道文件必须是 JSON 数组：${path.basename(filePath)}`);
   const selected = new Map(selectedFunds.map((fund) => [fund.code, fund]));
   const now = new Date(queriedAt).getTime();
   return raw.flatMap((row, index) => {
@@ -135,42 +139,49 @@ function loadChannelRows(filePath, selectedFunds, queriedAt, warnings) {
     }
     const fund = selected.get(String(row.code || ""));
     if (!fund) return [];
-    if (!row.channel || !row.sourceUrl || !row.verifiedAt || !row.expiresAt) {
-      warnings.push(`忽略渠道记录 #${index + 1}：缺少 channel/sourceUrl/verifiedAt/expiresAt`);
+    if (!row.channel || !row.channelBucket || !row.sourceUrl || !row.verifiedAt || !row.expiresAt) {
+      warnings.push(`忽略渠道记录 #${index + 1}：缺少 channel/channelBucket/sourceUrl/verifiedAt/expiresAt`);
+      return [];
+    }
+    if (!["sales-agency", "fund-manager-direct"].includes(row.channelBucket)) {
+      warnings.push(`忽略渠道记录 #${index + 1}：channelBucket 无效`);
       return [];
     }
     let sourceUrl;
     try {
       sourceUrl = new URL(row.sourceUrl);
     } catch {
-      warnings.push(`忽略渠道记录 ${row.channel}（${row.code}）：sourceUrl 无效`);
+      warnings.push(`忽略渠道记录 #${index + 1}：sourceUrl 无效`);
       return [];
     }
-    if (!/^https?:$/.test(sourceUrl.protocol)) {
-      warnings.push(`忽略渠道记录 ${row.channel}（${row.code}）：sourceUrl 只支持 http/https`);
+    if (sourceUrl.protocol !== "https:" || sourceUrl.username || sourceUrl.password) {
+      warnings.push(`忽略渠道记录 #${index + 1}：sourceUrl 必须是无认证信息的 HTTPS 地址`);
       return [];
     }
+    sourceUrl.search = "";
+    sourceUrl.hash = "";
     const verifiedAt = new Date(row.verifiedAt).getTime();
     const expiresAt = new Date(row.expiresAt).getTime();
     if (!Number.isFinite(verifiedAt) || !Number.isFinite(expiresAt) || verifiedAt > now || expiresAt <= verifiedAt) {
-      warnings.push(`忽略渠道记录 ${row.channel}（${row.code}）：核验时间或失效时间无效`);
+      warnings.push(`忽略渠道记录 #${index + 1}：核验时间或失效时间无效`);
       return [];
     }
     if (expiresAt <= now) {
-      warnings.push(`忽略已过期渠道 ${row.channel}（${row.code}）`);
+      warnings.push(`忽略已过期渠道记录 #${index + 1}`);
       return [];
     }
     if (!["open", "limited", "suspended", "unavailable", "unknown"].includes(row.status)) {
-      warnings.push(`忽略渠道记录 ${row.channel}（${row.code}）：status 无效`);
+      warnings.push(`忽略渠道记录 #${index + 1}：status 无效`);
       return [];
     }
     if (row.status === "limited" && (!Number.isFinite(row.limitAmount) || row.limitAmount <= 0)) {
-      warnings.push(`忽略渠道记录 ${row.channel}（${row.code}）：限购额度必须是正数`);
+      warnings.push(`忽略渠道记录 #${index + 1}：限购额度必须是正数`);
       return [];
     }
     return [Object.assign({}, fund, {
       channel: String(row.channel).trim(),
       channelType: "user-verified-channel",
+      channelBucket: row.channelBucket,
       status: row.status,
       limitAmount: row.status === "limited" ? row.limitAmount : null,
       sourceUrl: sourceUrl.toString(),
@@ -227,7 +238,8 @@ async function runQuery(options) {
   const scope = scopeKey(settings);
   const statePath = path.join(settings.outputDir, "state.json");
   const previousState = readJson(statePath, { version: 1, scopes: {} });
-  const previousSnapshot = previousState.scopes && previousState.scopes[scope];
+  const storedSnapshot = previousState.scopes && previousState.scopes[scope];
+  const previousSnapshot = storedSnapshot && storedSnapshot.version === 2 ? storedSnapshot : null;
   const rawRows = collected.rows.concat(channelRows);
   let rows = rawRows.map((row) => {
     if (row.status !== "unknown" || !previousSnapshot || !previousSnapshot.byKey) return row;
@@ -337,9 +349,15 @@ async function runQuery(options) {
     : []);
   const checked = collected.rows.filter((row) => row.status !== "unknown" && !officialBlockedCodes.has(row.code)).length;
   const coverage = selectedFunds.length ? checked / selectedFunds.length : 0;
+  const previousSalesCodes = new Set(previousSnapshot && previousSnapshot.byKey
+    ? Object.values(previousSnapshot.byKey)
+      .filter((row) => row.channelBucket !== "fund-manager-direct")
+      .map((row) => row.code)
+    : []);
+  const catalogShrunk = previousSalesCodes.size > 0 && selectedFunds.length < previousSalesCodes.size;
   let healthStatus = "degraded";
-  if (checked === selectedFunds.length && !collected.errors.length) healthStatus = "ok";
-  else if (coverage >= settings.minCoverage) healthStatus = "partial";
+  if (!catalogShrunk && checked === selectedFunds.length && !collected.errors.length) healthStatus = "ok";
+  else if (!catalogShrunk && coverage >= settings.minCoverage) healthStatus = "partial";
   const health = {
     status: healthStatus,
     checked,
@@ -347,6 +365,7 @@ async function runQuery(options) {
     coverage
   };
   if (officialBlockedCodes.size) warnings.push(`有 ${officialBlockedCodes.size} 只基金因官方公告未完成核验，本次不视为数据完整。`);
+  if (catalogShrunk) warnings.push(`基金目录数量由 ${previousSalesCodes.size} 减少到 ${selectedFunds.length}；本次不判断移除变化，也不更新基线。`);
   const effectiveRows = rows.map((row) => {
     let effective = row;
     if (row.status === "unknown" && previousSnapshot && previousSnapshot.byKey) {
@@ -360,17 +379,33 @@ async function runQuery(options) {
       limitAmount: Number.isFinite(effective.decisionLimitAmount) ? effective.decisionLimitAmount : effective.limitAmount
     });
   });
-  const snapshot = buildSnapshot(queriedAt, effectiveRows);
+  const directSnapshotRows = officialChannelEvidence.map((row) => ({
+    index: row.index,
+    code: row.code,
+    name: row.name,
+    channel: row.channel,
+    channelType: "official-direct-sale",
+    channelBucket: "fund-manager-direct",
+    currency: row.currency,
+    accountBasis: row.accountBasis,
+    status: "limited",
+    limitAmount: row.amount,
+    queriedAt: row.queriedAt
+  }));
+  const snapshot = buildSnapshot(queriedAt, effectiveRows.concat(directSnapshotRows));
   if (health.status !== "ok") warnings.push("数据不完整：本次不更新变化基线，待来源恢复后再比较。");
   const changes = health.status === "ok" ? compareSnapshots(previousSnapshot, snapshot) : [];
   const payload = {
     schemaVersion: 1,
+    startedAt: queriedAt,
+    completedAt: settings.completedAt || new Date().toISOString(),
     queriedAt,
     timezone: settings.timezone,
     selection: { index: settings.index, includeUsd: settings.includeUsd, includeEtf: settings.includeEtf },
     catalog: { discovered: catalog.length, selected: selectedFunds.length },
     rows,
     previousSnapshotFound: Boolean(previousSnapshot),
+    changesEvaluated: health.status === "ok",
     changes,
     errors: collected.errors,
     warnings,

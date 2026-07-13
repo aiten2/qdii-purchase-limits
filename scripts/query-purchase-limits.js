@@ -20,7 +20,6 @@ const HELP = `QDII 指数基金申购限额查询
   --history-limit N             保留历史快照数，默认 90
   --details                     输出暂停、不可买和未知项目的完整明细
   --force                       跳过官方公告缓存并重新查询
-  --no-official-notices         跳过官方公告查询
   --json                        终端输出 JSON
   --no-save                     不保存快照与报告
   --help                        显示帮助
@@ -62,7 +61,6 @@ function parseArgs(argv) {
     else if (item === "--history-limit") args.historyLimit = Number(requiredValue(argv, index++, item));
     else if (item === "--details") args.details = true;
     else if (item === "--force") args.force = true;
-    else if (item === "--no-official-notices") args.officialNotices = false;
     else if (item === "--json") args.json = true;
     else if (item === "--no-save") args.save = false;
     else if (item === "--help" || item === "-h") args.help = true;

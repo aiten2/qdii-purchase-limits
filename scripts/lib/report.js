@@ -45,7 +45,7 @@ function baseFundName(name) {
 
 function changeLine(change) {
   const row = change.after || change.before || {};
-  const channelSuffix = row.channel && !["天天基金公开销售页", "基金公司直销"].includes(row.channel) ? `｜${row.channel}` : "";
+  const channelSuffix = row.channel && row.channel !== "天天基金公开销售页" ? `｜${row.channel}` : "";
   const prefix = `${row.code || ""} ${row.name || ""}`.trim() + channelSuffix;
   const currency = row.currency || change.before && change.before.currency || change.after && change.after.currency;
   if (change.type === "amount-increased") return `- 额度提高：${formatCurrencyAmount(change.before.limitAmount, currency)} -> ${formatCurrencyAmount(change.after.limitAmount, currency)}｜${prefix}`;
@@ -105,7 +105,7 @@ function renderUnavailableTable(lines, rows) {
 }
 
 function directSaleNote(officialNotices) {
-  return "以基金公司官方 APP 实际显示为准。";
+  return "直销区仅列已确认的单日公告规则；以基金公司官方 APP 实际显示为准。";
 }
 
 function renderDirectSaleSection(lines, evidence, officialNotices, indexName) {
@@ -129,6 +129,17 @@ function renderDirectSaleSection(lines, evidence, officialNotices, indexName) {
   lines.push("");
 }
 
+function userDirectEvidence(rows) {
+  return sortPurchasableRows((rows || []).filter((row) => row.channelBucket === "fund-manager-direct")).map((row) => ({
+    index: row.index,
+    code: row.code,
+    name: row.name,
+    amount: Number.isFinite(row.decisionLimitAmount) ? row.decisionLimitAmount : row.limitAmount,
+    currency: row.currency || "CNY",
+    accountBasis: "user-verified"
+  })).filter((row) => Number.isFinite(row.amount));
+}
+
 function reportFooter(lines) {
   lines.push("仅整理公开申购限制信息，不构成基金推荐或投资建议。", "");
 }
@@ -136,11 +147,12 @@ function reportFooter(lines) {
 function renderCompactMarkdown(payload) {
   const health = payload.health || {};
   const lines = ["# 当前申购限额", ""];
-  lines.push(`更新时间：${formatTime(payload.queriedAt, payload.timezone)}｜数据：${health.checked || 0}/${health.expected || 0}`, "");
+  lines.push(`更新时间：${formatTime(payload.completedAt || payload.queriedAt, payload.timezone)}｜代销数据：${health.checked || 0}/${health.expected || 0}`, "");
   if (health.status !== "ok") lines.push("**数据不完整：暂未确认的项目不进入限额清单。**", "");
   const indexes = payload.selection.index === "all" ? ["nasdaq100", "sp500"] : [payload.selection.index];
   indexes.forEach((indexName) => {
-    const rows = (payload.rows || []).filter((row) => row.index === indexName);
+    const indexRows = (payload.rows || []).filter((row) => row.index === indexName);
+    const rows = indexRows.filter((row) => row.channelBucket !== "fund-manager-direct");
     const limited = sortPurchasableRows(rows);
     const unavailable = rows.filter((row) => !["open", "limited"].includes(row.decisionStatus || row.status));
     lines.push(`## 代销渠道｜${INDEX_LABELS[indexName] || indexName}`, "");
@@ -150,7 +162,7 @@ function renderCompactMarkdown(payload) {
       lines.push("");
     }
     if (unavailable.length) lines.push(`其余${INDEX_LABELS[indexName] || indexName}相关基金未进入当前限额清单。`, "");
-    renderDirectSaleSection(lines, payload.officialChannelEvidence, payload.officialNotices, indexName);
+    renderDirectSaleSection(lines, (payload.officialChannelEvidence || []).concat(userDirectEvidence(indexRows)), payload.officialNotices, indexName);
   });
   if ((payload.changes || []).length) {
     lines.push("## 本次变化", "");
@@ -163,14 +175,15 @@ function renderCompactMarkdown(payload) {
 
 function renderDetailedMarkdown(payload) {
   const lines = ["# 当前申购限额", ""];
-  lines.push(`更新时间：${formatTime(payload.queriedAt, payload.timezone)}`);
+  lines.push(`更新时间：${formatTime(payload.completedAt || payload.queriedAt, payload.timezone)}`);
   lines.push(`范围：${payload.selection.index === "all" ? "纳斯达克100 + 标普500" : INDEX_LABELS[payload.selection.index] || payload.selection.index}；${payload.selection.includeUsd ? "包含美元份额" : "人民币份额"}；${payload.selection.includeEtf ? "包含场内ETF" : "场外申购"}`);
   const health = payload.health || {};
-  lines.push(`数据：${health.status === "ok" ? "完整" : "不完整"}，${health.checked || 0}/${health.expected || 0}`, "");
+  lines.push(`代销数据：${health.status === "ok" ? "完整" : "不完整"}，${health.checked || 0}/${health.expected || 0}`, "");
 
   const indexes = payload.selection.index === "all" ? ["nasdaq100", "sp500"] : [payload.selection.index];
   indexes.forEach((indexName) => {
-    const rows = (payload.rows || []).filter((row) => row.index === indexName);
+    const indexRows = (payload.rows || []).filter((row) => row.index === indexName);
+    const rows = indexRows.filter((row) => row.channelBucket !== "fund-manager-direct");
     const limited = sortPurchasableRows(rows);
     const unavailable = rows.filter((row) => !["open", "limited"].includes(row.decisionStatus || row.status));
     lines.push(`## 代销渠道｜${INDEX_LABELS[indexName] || indexName}`, "", "### 当前限额", "");
@@ -185,11 +198,12 @@ function renderDetailedMarkdown(payload) {
       renderUnavailableTable(lines, unavailable);
       lines.push("");
     }
-    renderDirectSaleSection(lines, payload.officialChannelEvidence, payload.officialNotices, indexName);
+    renderDirectSaleSection(lines, (payload.officialChannelEvidence || []).concat(userDirectEvidence(indexRows)), payload.officialNotices, indexName);
   });
 
   lines.push("## 本次变化", "");
-  if (!payload.previousSnapshotFound) lines.push("这是第一次查询：已经保存本次结果，供下次比较。", "");
+  if (health.status !== "ok" || payload.changesEvaluated === false) lines.push("本次数据不完整，未执行变化判断。", "");
+  else if (!payload.previousSnapshotFound) lines.push("这是第一次查询：已经保存本次结果，供下次比较。", "");
   else if (!(payload.changes || []).length) lines.push("与上次相比，没有发现额度或状态变化。", "");
   else {
     payload.changes.forEach((change) => lines.push(changeLine(change)));

@@ -1,11 +1,10 @@
 ---
 name: qdii-purchase-limits
 description: Use when users ask which Nasdaq 100 or S&P 500 QDII funds can be purchased today, want purchase limits sorted by amount, need direct-sale announcement limits, limit-change detection, or scheduled daily snapshots and change notifications.
-whenToUse: 当用户询问纳指、纳斯达克100或标普500 QDII基金今日申购限额、直销限额、额度变化或每日自动查询时使用。
 license: MIT
 compatibility: Requires Node.js 22+, outbound HTTPS, and a writable user data directory. macOS automation installer is optional.
 metadata:
-  version: "1.11.2"
+  version: "1.12.0"
 ---
 
 # QDII Purchase Limits
@@ -30,7 +29,7 @@ node scripts/query-purchase-limits.js --index sp500
 node scripts/query-purchase-limits.js --index all --json
 ```
 
-在支持显式 Skill 命令的工具中，优先直接调用本 Skill，避免依赖模型自动判断：Qwen Code 和 Qoder 使用 `/qdii-purchase-limits`，Kimi Code CLI 使用 `/skill:qdii-purchase-limits`。其他工具直接要求“使用 qdii-purchase-limits 并原样返回脚本输出”。
+直接要求 Agent“使用 qdii-purchase-limits 查询”即可。各工具的显式调用语法并不统一，不要自行假定斜杠命令；以当前客户端的 Skill 列表为准。
 
 ## 执行约束
 
@@ -86,6 +85,7 @@ node scripts/query-purchase-limits.js --index all --json
     "code": "019441",
     "name": "基金名称",
     "channel": "基金公司直销",
+    "channelBucket": "fund-manager-direct",
     "status": "limited",
     "limitAmount": 10000,
     "sourceUrl": "https://example.com/source",

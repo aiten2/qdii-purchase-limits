@@ -12,10 +12,6 @@ function xml(value) {
 }
 
 function buildMacPlist(options) {
-  const intervals = options.schedule.map((slot) => {
-    const [hour, minute] = slot.time.split(":").map(Number);
-    return `      <dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>${minute}</integer></dict>`;
-  }).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -30,10 +26,7 @@ function buildMacPlist(options) {
     <key>QDII_LIMIT_NOTIFY_MODE</key><string>changes</string>
     <key>QDII_LIMIT_WEBHOOK_TYPE</key><string>feishu</string>
   </dict>
-  <key>StartCalendarInterval</key>
-  <array>
-${intervals}
-  </array>
+  <key>StartInterval</key><integer>300</integer>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
   <key>StandardOutPath</key><string>${xml(path.join(options.outputDir, "automation.out.log"))}</string>

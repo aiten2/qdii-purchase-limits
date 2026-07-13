@@ -38,13 +38,20 @@ function sortPurchasableRows(rows) {
 }
 
 function snapshotKey(row) {
-  return [clean(row.index), clean(row.code), clean(row.channel)].join("|");
+  return [
+    clean(row.index),
+    clean(row.code),
+    clean(row.channel),
+    clean(row.channelBucket),
+    clean(row.currency),
+    clean(row.accountBasis)
+  ].join("|");
 }
 
 function buildSnapshot(queriedAt, rows) {
   const normalizedRows = (rows || []).map((row) => Object.assign({}, row, { key: snapshotKey(row) }));
   return {
-    version: 1,
+    version: 2,
     queriedAt,
     rows: normalizedRows,
     byKey: Object.fromEntries(normalizedRows.map((row) => [row.key, row]))

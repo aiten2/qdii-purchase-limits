@@ -79,7 +79,7 @@ test("accepts successful Feishu response formats and rejects unknown notificatio
   await assert.rejects(sendNotification(payload, { type: "typo", webhookUrl: "https://example.com/hook" }), /通知类型只支持/);
 });
 
-test("builds a launchd plist with three triggers and login catch-up", () => {
+test("builds a launchd plist that polls while Node applies the Beijing schedule", () => {
   const plist = buildMacPlist({
     label: "com.example.qdii-limits",
     nodePath: "/usr/local/bin/node",
@@ -88,9 +88,8 @@ test("builds a launchd plist with three triggers and login catch-up", () => {
     schedule: DEFAULT_SCHEDULE
   });
   assert.match(plist, /<key>RunAtLoad<\/key>\s*<true\/>/);
-  assert.match(plist, /<integer>9<\/integer>/);
-  assert.match(plist, /<integer>14<\/integer>/);
-  assert.match(plist, /<integer>20<\/integer>/);
+  assert.match(plist, /<key>StartInterval<\/key>\s*<integer>300<\/integer>/);
+  assert.doesNotMatch(plist, /StartCalendarInterval/);
   assert.match(plist, /run-scheduled\.js/);
   assert.match(plist, /io\.github\.qdii-purchase-limits\.scheduler|com\.example\.qdii-limits/);
 });
@@ -112,6 +111,22 @@ test("runs one due slot, records success, and skips the same slot next time", as
   assert.equal(second.skipped, true);
   assert.equal(queryCount, 1);
   assert.equal(notifyCount, 1);
+});
+
+test("scheduled runs always refresh the current official announcement timeline", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-schedule-refresh-"));
+  let queryOptions;
+  await runScheduled({
+    now: new Date("2026-07-12T06:40:00.000Z"),
+    outputDir,
+    timezone: "Asia/Shanghai",
+    runQuery: async (options) => {
+      queryOptions = options;
+      return { exitCode: 0, health: { status: "ok" }, previousSnapshotFound: true, changes: [] };
+    },
+    sendNotification: async () => ({ sent: false, reason: "not-needed" })
+  });
+  assert.equal(queryOptions.officialNoticeCacheHours, 0);
 });
 
 test("does not mark a partial query as a completed automation slot", async () => {

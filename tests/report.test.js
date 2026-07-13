@@ -81,6 +81,8 @@ test("detailed report groups unavailable funds without links or channel names", 
   assert.match(markdown, /\| 状态 \| 基金 \| 代码 \|/);
   assert.match(markdown, /\| 暂停申购 \| 暂停基金 \| a1、a2 \|/);
   assert.match(markdown, /\| 暂未确认 \| 未确认基金 \| b1 \|/);
+  assert.match(markdown, /本次数据不完整，未执行变化判断/);
+  assert.doesNotMatch(markdown, /没有发现额度或状态变化/);
   assertNoInternalEvidence(markdown);
 });
 
@@ -191,7 +193,7 @@ test("extended output keeps currency, route, and custom channel records separate
       { index: "nasdaq100", code: "cny1", name: "测试纳指A", channel: "天天基金公开销售页", channelType: "third-party-public-sales", currency: "CNY", route: "otc", status: "limited", limitAmount: 100, decisionStatus: "limited", decisionLimitAmount: 100 },
       { index: "nasdaq100", code: "usd1", name: "测试纳指美元A", channel: "天天基金公开销售页", channelType: "third-party-public-sales", currency: "USD", route: "otc", status: "limited", limitAmount: 100, decisionStatus: "limited", decisionLimitAmount: 100 },
       { index: "nasdaq100", code: "etf1", name: "测试纳指ETF", channel: "交易所", channelType: "third-party-public-sales", currency: "CNY", route: "exchange", status: "limited", limitAmount: 100, decisionStatus: "limited", decisionLimitAmount: 100 },
-      { index: "nasdaq100", code: "custom1", name: "测试纳指A", channel: "示例银行", channelType: "user-verified-channel", currency: "CNY", route: "otc", status: "limited", limitAmount: 100, decisionStatus: "limited", decisionLimitAmount: 100 }
+      { index: "nasdaq100", code: "custom1", name: "测试纳指A", channel: "示例银行", channelType: "user-verified-channel", channelBucket: "sales-agency", currency: "CNY", route: "otc", status: "limited", limitAmount: 100, decisionStatus: "limited", decisionLimitAmount: 100 }
     ],
     changes: [], health: { status: "ok", checked: 4, expected: 4, coverage: 1 }, officialChannelEvidence: []
   });
@@ -200,6 +202,19 @@ test("extended output keeps currency, route, and custom channel records separate
   assert.match(markdown, /测试纳指ETF（场内交易）/);
   assert.match(markdown, /测试纳指（示例银行）/);
   assert.doesNotMatch(markdown, /cny1、usd1/);
+});
+
+test("renders a user-verified direct channel only in the direct-sale section", () => {
+  const markdown = renderMarkdown({
+    queriedAt: "2026-07-13T01:00:00.000Z", timezone: "Asia/Shanghai",
+    selection: { index: "nasdaq100", includeUsd: false, includeEtf: false },
+    rows: [{ index: "nasdaq100", code: "d1", name: "测试纳指A", channel: "基金公司直销", channelType: "user-verified-channel", channelBucket: "fund-manager-direct", currency: "CNY", status: "limited", limitAmount: 500, decisionStatus: "limited", decisionLimitAmount: 500 }],
+    changes: [], health: { status: "ok", checked: 1, expected: 1, coverage: 1 }, officialChannelEvidence: []
+  });
+  const sales = markdown.slice(markdown.indexOf("## 代销渠道｜纳斯达克100"), markdown.indexOf("## 基金公司直销｜纳斯达克100"));
+  const direct = markdown.slice(markdown.indexOf("## 基金公司直销｜纳斯达克100"));
+  assert.doesNotMatch(sales, /d1/);
+  assert.match(direct, /\| 500元 \| 测试纳指 \| d1 \|/);
 });
 
 test("change lines preserve non-default channel and currency context", () => {

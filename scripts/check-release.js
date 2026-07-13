@@ -24,7 +24,8 @@ function checkRelease(root, options) {
     "SKILL.md", "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "THIRD_PARTY_NOTICES.md",
     "package.json", "package-lock.json", "agents/openai.yaml", ".github/workflows/test.yml", ".github/dependabot.yml",
     "scripts/query-purchase-limits.js", "scripts/run-scheduled.js", "scripts/lib/official-notices.js",
-    "scripts/lib/official-pdf.js", "scripts/lib/announcement-index.js", "scripts/lib/query.js", "scripts/lib/report.js"
+    "scripts/lib/official-pdf.js", "scripts/lib/announcement-index.js", "scripts/lib/query.js", "scripts/lib/report.js",
+    "scripts/check-git-history.js", "scripts/check-github-releases.js"
   ];
   required.forEach((name) => {
     if (!fs.existsSync(path.join(root, name))) errors.push(`缺少文件：${name}`);
@@ -35,6 +36,11 @@ function checkRelease(root, options) {
     const frontmatter = skill.match(/^---\n([\s\S]*?)\n---/);
     if (!frontmatter) errors.push("SKILL.md 缺少 YAML frontmatter");
     else {
+      const keys = frontmatter[1].split("\n")
+        .filter((line) => /^[A-Za-z][A-Za-z0-9-]*:/.test(line))
+        .map((line) => line.split(":", 1)[0]);
+      const allowedKeys = new Set(["name", "description", "license", "compatibility", "metadata", "allowed-tools"]);
+      keys.filter((key) => !allowedKeys.has(key)).forEach((key) => errors.push(`SKILL.md 含非标准 frontmatter 字段：${key}`));
       if (!/^name:\s*qdii-purchase-limits\s*$/m.test(frontmatter[1])) errors.push("Skill name 不正确");
       if (!/^description:\s*Use when /m.test(frontmatter[1])) errors.push("description 必须以 Use when 开头");
       if (!/^license:\s*MIT\s*$/m.test(frontmatter[1])) errors.push("frontmatter 未声明 MIT");
@@ -43,7 +49,6 @@ function checkRelease(root, options) {
     if (!/必须实际运行 `scripts\/query-purchase-limits\.js`/.test(skill)) errors.push("SKILL.md 缺少强制脚本执行约束");
     if (!/唯一入口[\s\S]*标准输出原样回复/.test(skill)) errors.push("SKILL.md 缺少确定性查询入口或原样输出约束");
     if (!/不得用其他网页工具替代脚本/.test(skill)) errors.push("SKILL.md 缺少禁止模型自行浏览替代脚本的约束");
-    if (!/Qwen Code[\s\S]*Kimi Code CLI[\s\S]*\/skill:qdii-purchase-limits/.test(skill)) errors.push("SKILL.md 缺少国产 Agent 显式调用说明");
     if (!/无法执行 Node\.js[\s\S]*不得模拟/.test(skill)) errors.push("SKILL.md 缺少不可执行时的降级约束");
     if (!/默认固定输出四个区块[\s\S]*代销渠道｜纳斯达克100[\s\S]*基金公司直销｜纳斯达克100[\s\S]*代销渠道｜标普500[\s\S]*基金公司直销｜标普500/.test(skill)) errors.push("SKILL.md 缺少四区块固定输出顺序");
   }
@@ -54,6 +59,14 @@ function checkRelease(root, options) {
   const packagePath = path.join(root, "package.json");
   if (fs.existsSync(packagePath)) {
     const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+    const lockPath = path.join(root, "package-lock.json");
+    const lockJson = fs.existsSync(lockPath) ? JSON.parse(fs.readFileSync(lockPath, "utf8")) : null;
+    const skill = fs.existsSync(skillPath) ? fs.readFileSync(skillPath, "utf8") : "";
+    const skillVersion = skill.match(/^\s+version:\s*["']?([^"'\s]+)["']?\s*$/m);
+    if (!lockJson || lockJson.version !== packageJson.version || !lockJson.packages || lockJson.packages[""].version !== packageJson.version) {
+      errors.push("package.json 与 package-lock.json 版本不一致");
+    }
+    if (!skillVersion || skillVersion[1] !== packageJson.version) errors.push("SKILL.md 与 package.json 版本不一致");
     if (!packageJson.dependencies || packageJson.dependencies["pdfjs-dist"] !== "4.8.69") errors.push("pdfjs-dist 必须锁定为已验证版本 4.8.69");
     if (!packageJson.engines || packageJson.engines.node !== ">=22") errors.push("package.json 必须要求 Node.js 22+");
   }
@@ -73,6 +86,13 @@ function checkRelease(root, options) {
     if (!/node-version: \[22, 24\]/.test(workflow)) errors.push("GitHub Actions 必须测试 Node.js 22 和 24");
     if (!/actions\/checkout@[0-9a-f]{40} # v7\.0\.0/.test(workflow)) errors.push("actions/checkout 必须固定到已审核的 v7.0.0 提交");
     if (!/actions\/setup-node@[0-9a-f]{40} # v6\.4\.0/.test(workflow)) errors.push("actions/setup-node 必须固定到已审核的 v6.4.0 提交");
+    if (!/check-git-history\.js --public-release/.test(workflow)) errors.push("GitHub Actions 必须执行公开发布模式的完整历史扫描");
+    if (!/check-github-releases\.js/.test(workflow)) errors.push("GitHub Actions 必须审计 GitHub Release 元数据和附件");
+  }
+  const dependabotPath = path.join(root, ".github", "dependabot.yml");
+  if (fs.existsSync(dependabotPath)) {
+    const dependabot = fs.readFileSync(dependabotPath, "utf8");
+    if (!/package-ecosystem:\s*npm/.test(dependabot)) errors.push("Dependabot 必须检查 npm 依赖");
   }
 
   const files = filesUnder(root);
@@ -102,7 +122,7 @@ function main() {
     result.errors.forEach((error) => console.error(`FAIL: ${error}`));
     process.exitCode = 1;
   } else {
-    process.stdout.write(`PASS: ${result.checkedFiles} files checked; release gates passed.\n`);
+    process.stdout.write(`PASS: ${result.checkedFiles} files checked; static files and offline tests passed.\n`);
   }
 }
 

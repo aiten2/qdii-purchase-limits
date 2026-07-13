@@ -142,3 +142,68 @@ test("keeps tracing direct-sale notices after a newer general rule covers every 
   assert.ok(events.some((event) => event.parsed.limits[0].scope === "specific-channel"));
   assert.ok(events.some((event) => event.parsed.limits[0].scope === "fund-manager-general"));
 });
+
+test("blocks an older rule when a newer candidate announcement cannot be parsed", async () => {
+  const funds = [{ code: "111111", name: "测试纳斯达克100基金A", index: "nasdaq100" }];
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [
+      { FUNDCODE: "111111", TITLE: "测试基金调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-07-13", ID: "AN202607130000000001" },
+      { FUNDCODE: "111111", TITLE: "测试基金调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-07-01", ID: "AN202607010000000002" }
+    ] }),
+    fetchBuffer: async (url) => {
+      if (url.includes("07130000000001")) throw new Error("HTTP 403");
+      return Buffer.from("older");
+    },
+    extractPdfText: async (buffer) => buffer.toString(),
+    parseOfficialNoticeText: () => ({
+      parsed: true, announcementDate: "2026-07-01", effectiveDate: "2026-07-01", shareCodes: ["111111"],
+      limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "111111": { amount: 100, currency: "CNY" } } }],
+      parseWarnings: []
+    })
+  });
+
+  assert.equal(result.byCode["111111"], undefined);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].code, "111111");
+  assert.equal(result.errors[0].noticeId, "AN202607130000000001");
+});
+
+test("keeps a newer verified rule when only an older announcement fails to parse", async () => {
+  const funds = [{ code: "111111", name: "测试纳斯达克100基金A", index: "nasdaq100" }];
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [
+      { FUNDCODE: "111111", TITLE: "测试基金调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-07-13", ID: "AN202607130000000001" },
+      { FUNDCODE: "111111", TITLE: "测试基金调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-07-01", ID: "AN202607010000000002" }
+    ] }),
+    fetchBuffer: async (url) => {
+      if (url.includes("07010000000002")) throw new Error("old PDF unavailable");
+      return Buffer.from("newer");
+    },
+    extractPdfText: async (buffer) => buffer.toString(),
+    parseOfficialNoticeText: () => ({
+      parsed: true, announcementDate: "2026-07-13", effectiveDate: "2026-07-13", shareCodes: ["111111"],
+      limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "111111": { amount: 10, currency: "CNY" } } }],
+      parseWarnings: []
+    })
+  });
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.byCode["111111"][0].date, "2026-07-13");
+});
+
+test("continues before a resume event to retain an older long-term limit", async () => {
+  const funds = [{ code: "111111", name: "测试纳斯达克100基金A", index: "nasdaq100" }];
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [
+      { FUNDCODE: "111111", TITLE: "测试基金恢复申购业务的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-07-13", ID: "AN202607130000000001" },
+      { FUNDCODE: "111111", TITLE: "测试基金调整大额申购业务限额的公告", NEWCATEGORY: "5", PUBLISHDATEDesc: "2026-06-01", ID: "AN202606010000000002" }
+    ] }),
+    fetchBuffer: async (url) => Buffer.from(url.includes("07130000000001") ? "resume" : "limit"),
+    extractPdfText: async (buffer) => buffer.toString(),
+    parseOfficialNoticeText: (text) => text === "resume"
+      ? { parsed: false, announcementDate: "2026-07-13", effectiveDate: "2026-07-13", shareCodes: ["111111"], limits: [], parseWarnings: [] }
+      : { parsed: true, announcementDate: "2026-06-01", effectiveDate: "2026-06-01", shareCodes: ["111111"], limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "111111": { amount: 100, currency: "CNY" } } }], parseWarnings: [] }
+  });
+
+  assert.deepEqual(result.byCode["111111"].map((event) => event.category), ["resume", "limit"]);
+});

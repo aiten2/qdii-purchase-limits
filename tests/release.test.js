@@ -5,7 +5,9 @@ const os = require("node:os");
 const path = require("node:path");
 
 const { checkRelease, filesUnder } = require("../scripts/check-release");
-const { findSensitiveKinds } = require("../scripts/check-git-history");
+const childProcess = require("node:child_process");
+const { findSensitiveKinds, scanHistory } = require("../scripts/check-git-history");
+const { checkReleaseMetadata } = require("../scripts/check-github-releases");
 
 test("public skill package passes release gates", () => {
   const root = path.resolve(__dirname, "..");
@@ -14,10 +16,10 @@ test("public skill package passes release gates", () => {
   assert.ok(result.checkedFiles >= 8);
 });
 
-test("public README keeps the Agent table focused on installation and invocation", () => {
+test("public README keeps the Agent table focused on installation and use", () => {
   const readme = fs.readFileSync(path.resolve(__dirname, "..", "README.md"), "utf8");
-  assert.match(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 调用方式 \|/);
-  assert.doesNotMatch(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 调用方式 \| 状态 \|/);
+  assert.match(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 使用方式 \|/);
+  assert.doesNotMatch(readme, /\| Agent \/ 工具 \| 安装位置或方式 \| 使用方式 \| 状态 \|/);
 });
 
 test("CLI help uses the same neutral product title as the README", () => {
@@ -65,7 +67,31 @@ test("git history scan classifies credentials without returning their values", (
 });
 
 test("public release history scan detects private paths separately", () => {
-  const privatePath = path.posix.join("/", "Users", "developer", "Documents", "System", "private");
+  const privatePath = path.posix.join("/", "Users", "developer", "private");
   assert.deepEqual(findSensitiveKinds(privatePath), []);
   assert.deepEqual(findSensitiveKinds(privatePath, { publicRelease: true }), ["developer-home-path"]);
+});
+
+test("public release history scan checks commit metadata without exposing the email", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-history-metadata-"));
+  const run = (args, env) => childProcess.execFileSync("git", args, { cwd: root, encoding: "utf8", env: Object.assign({}, process.env, env) });
+  run(["init", "-q"]);
+  fs.writeFileSync(path.join(root, "README.md"), "clean\n");
+  run(["add", "README.md"]);
+  const email = ["private-person", "example.com"].join("@");
+  run(["commit", "-q", "-m", "clean commit"], {
+    GIT_AUTHOR_NAME: "Developer", GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_NAME: "Developer", GIT_COMMITTER_EMAIL: email
+  });
+  const findings = scanHistory(root, { publicRelease: true });
+  assert.ok(findings.some((item) => item.kind === "developer-email"));
+  assert.equal(JSON.stringify(findings).includes(email), false);
+});
+
+test("GitHub Release audit blocks unreviewed assets and private metadata", () => {
+  const privatePath = path.posix.join("/", "Users", "developer", "private");
+  const errors = checkReleaseMetadata([{ tag_name: "v1", body: privatePath, assets: [{ name: "bundle.zip" }] }]);
+  assert.equal(errors.length, 2);
+  assert.equal(errors.join("\n").includes(privatePath), false);
+  assert.deepEqual(checkReleaseMetadata([{ tag_name: "v1", body: "公开变更说明", assets: [] }]), []);
 });

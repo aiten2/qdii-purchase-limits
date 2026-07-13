@@ -132,34 +132,48 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
       const directNotices = notices.filter((notice) => /直销|电子交易平台|网上交易/.test(notice.title));
       const generalNotices = notices.filter((notice) => !directNotices.includes(notice));
       const orderedNotices = directNotices.concat(generalNotices);
-      const requestedCodes = new Set(groupFunds.map((fund) => fund.code));
-      const foundCodes = new Set();
       const events = [];
+      const noticeFailures = [];
       for (const notice of orderedNotices) {
+        let stage = "download";
         try {
           const buffer = await settings.fetchBuffer(notice.url, settings);
+          stage = "extract-text";
           const text = await settings.extractPdfText(buffer);
+          stage = "parse";
           const parsed = repairAnnouncementDate(settings.parseOfficialNoticeText(text), notice.date);
           const statusOnlyEvent = ["full-suspend", "resume"].includes(notice.category)
             && (parsed && parsed.shareCodes || []).length > 0;
-          if (!parsed || (!parsed.parsed && !statusOnlyEvent)) continue;
+          if (!parsed || (!parsed.parsed && !statusOnlyEvent)) {
+            throw new Error("公告正文未能可靠解析");
+          }
           const event = Object.assign({}, notice, { parsed });
           events.push(event);
-          eventCoveredCodes(event).forEach((code) => {
-            if (requestedCodes.has(code)) foundCodes.add(code);
+        } catch (error) {
+          noticeFailures.push({
+            noticeId: notice.id,
+            noticeDate: notice.date,
+            noticeTitle: notice.title,
+            stage,
+            message: error.message
           });
-          const isDirectCandidate = directNotices.includes(notice);
-          if (!isDirectCandidate && [...requestedCodes].every((code) => foundCodes.has(code))) break;
-        } catch {
-          // A bad mirror entry must not prevent searching older applicable notices.
         }
       }
       groupFunds.forEach((fund) => {
         const matching = events.filter((event) => eventCoveredCodes(event).has(fund.code));
-        if (matching.length) byCode[fund.code] = matching;
+        const latestMatchingDate = matching.map((event) => event.date).filter(Boolean).sort().reverse()[0] || null;
+        const blockingFailures = latestMatchingDate
+          ? noticeFailures.filter((failure) => !failure.noticeDate || failure.noticeDate >= latestMatchingDate)
+          : noticeFailures;
+        if (blockingFailures.length) {
+          const failure = blockingFailures.sort((left, right) => String(right.noticeDate).localeCompare(String(left.noticeDate)))[0];
+          errors.push(Object.assign({ code: fund.code, source: "announcement-index" }, failure));
+        } else if (matching.length) {
+          byCode[fund.code] = matching;
+        }
       });
     } catch (error) {
-      groupFunds.forEach((fund) => errors.push({ code: fund.code, source: "announcement-index", message: error.message }));
+      groupFunds.forEach((fund) => errors.push({ code: fund.code, source: "announcement-index", stage: "index", message: error.message }));
     }
   }
   return {

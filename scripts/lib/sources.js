@@ -1,8 +1,18 @@
-const http = require("node:http");
 const https = require("node:https");
 const { classifyFund, clean } = require("./core");
 
 const CATALOG_URL = "https://fund.eastmoney.com/js/fundcode_search.js";
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+
+function validateSourceTarget(url) {
+  const target = new URL(url);
+  if (target.protocol !== "https:") throw new Error("公开数据源只允许 HTTPS");
+  if (target.username || target.password) throw new Error("公开数据源地址不得包含认证信息");
+  if (target.hostname !== "eastmoney.com" && !target.hostname.endsWith(".eastmoney.com")) {
+    throw new Error("公开数据源域名不在允许范围");
+  }
+  return target;
+}
 
 function parseFundCatalog(source) {
   const match = String(source || "").match(/(?:var\s+r\s*=|window\.r\s*=)\s*(\[[\s\S]*\])\s*;?\s*$/);
@@ -67,6 +77,7 @@ function parsePurchasePage(html, fund, queriedAt) {
     shareClass: inferShareClass(fund.name),
     channel: "天天基金公开销售页",
     channelType: "third-party-public-sales",
+    channelBucket: "sales-agency",
     status,
     limitAmount: amount,
     statusText: purchaseStatusText(status),
@@ -77,12 +88,17 @@ function parsePurchasePage(html, fund, queriedAt) {
 }
 
 function requestText(url, options, redirects) {
-  const settings = Object.assign({ timeoutMs: 20000, retries: 3 }, options);
+  const settings = Object.assign({ timeoutMs: 20000, retries: 3, maxResponseBytes: MAX_RESPONSE_BYTES }, options);
   const redirectCount = redirects || 0;
   return new Promise((resolve, reject) => {
-    const target = new URL(url);
-    const transport = target.protocol === "http:" ? http : https;
-    const request = transport.get(target, {
+    let target;
+    try {
+      target = validateSourceTarget(url);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const request = https.get(target, {
       timeout: settings.timeoutMs,
       headers: {
         "User-Agent": "qdii-purchase-limits (+https://github.com/aiten2/qdii-purchase-limits)",
@@ -95,8 +111,16 @@ function requestText(url, options, redirects) {
         return resolve(requestText(new URL(response.headers.location, target).toString(), settings, redirectCount + 1));
       }
       let body = "";
+      let receivedBytes = 0;
       response.setEncoding("utf8");
-      response.on("data", (chunk) => { body += chunk; });
+      response.on("data", (chunk) => {
+        receivedBytes += Buffer.byteLength(chunk, "utf8");
+        if (receivedBytes > settings.maxResponseBytes) {
+          request.destroy(new Error("响应内容超过大小限制"));
+          return;
+        }
+        body += chunk;
+      });
       response.on("end", () => {
         if (response.statusCode < 200 || response.statusCode >= 300) reject(new Error(`HTTP ${response.statusCode}`));
         else resolve(body);
@@ -158,6 +182,7 @@ async function collectFundStatuses(funds, options) {
         shareClass: inferShareClass(fund.name),
         channel: "天天基金公开销售页",
         channelType: "third-party-public-sales",
+        channelBucket: "sales-agency",
         status: "unknown",
         limitAmount: null,
         statusText: "数据源访问失败",
@@ -180,5 +205,6 @@ module.exports = {
   parseAmount,
   parseFundCatalog,
   parsePurchasePage,
-  purchaseStatusText
+  purchaseStatusText,
+  validateSourceTarget
 };

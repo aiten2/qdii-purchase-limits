@@ -23,8 +23,15 @@ function credentialPatterns() {
 
 function publicReleasePatterns() {
   return [
-    ["developer-home-path", /\/Users\/[^/]+\/Documents\/System\//]
+    ["developer-home-path", /(?:\/Users\/[^/\s]+\/|[A-Za-z]:\\Users\\[^\\\s]+\\)/]
   ];
+}
+
+function metadataKinds(text) {
+  const source = String(text || "");
+  const emails = source.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [];
+  return emails.some((email) => !/@users\.noreply\.github\.com$/i.test(email)
+    && !/(?:bot|noreply)@/i.test(email)) ? ["developer-email"] : [];
 }
 
 function isPlaceholder(match) {
@@ -54,8 +61,25 @@ function scanHistory(root, options) {
   const seen = new Set();
 
   commits.forEach((commit) => {
+    const metadata = git(["show", "-s", "--format=%B%n%an%n%ae%n%cn%n%ce", commit], { cwd: root });
+    const metadataKindsFound = findSensitiveKinds(metadata, settings)
+      .concat(settings.publicRelease ? metadataKinds(metadata) : []);
+    metadataKindsFound.forEach((kind) => {
+      const key = `${commit}:commit-metadata:${kind}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        findings.push({ commit: commit.slice(0, 12), file: "[commit-metadata]", kind });
+      }
+    });
     const files = git(["ls-tree", "-r", "--name-only", commit], { cwd: root }).trim().split("\n").filter(Boolean);
     files.forEach((file) => {
+      findSensitiveKinds(file, settings).forEach((kind) => {
+        const key = `${commit}:${file}:filename:${kind}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          findings.push({ commit: commit.slice(0, 12), file: "[filename]", kind });
+        }
+      });
       let content;
       try {
         content = git(["show", `${commit}:${file}`], { cwd: root });
@@ -70,6 +94,10 @@ function scanHistory(root, options) {
         findings.push({ commit: commit.slice(0, 12), file, kind });
       });
     });
+  });
+  const refs = git(["for-each-ref", "--format=%(refname)%00%(contents)", "refs/heads", "refs/tags"], { cwd: root });
+  findSensitiveKinds(refs, settings).forEach((kind) => {
+    findings.push({ commit: "refs", file: "[ref-metadata]", kind });
   });
   return findings;
 }
@@ -96,4 +124,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { credentialPatterns, publicReleasePatterns, findSensitiveKinds, scanHistory, main };
+module.exports = { credentialPatterns, publicReleasePatterns, metadataKinds, findSensitiveKinds, scanHistory, main };

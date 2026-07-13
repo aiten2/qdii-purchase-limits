@@ -35,6 +35,7 @@ async function runScheduled(options) {
     channelsFile,
     timezone: settings.timezone,
     officialNotices: true,
+    officialNoticeCacheHours: 0,
     queriedAt: settings.now.toISOString(),
     save: true
   });

@@ -34,14 +34,14 @@ test("parses public CLI options", () => {
   assert.equal(args.officialNotices, true);
   assert.equal(args.force, false);
   assert.equal(parseArgs([]).concurrency, 2);
-  assert.equal(parseArgs(["--no-official-notices"]).officialNotices, false);
+  assert.throws(() => parseArgs(["--no-official-notices"]), /未知参数/);
   const forced = parseArgs(["--force"]);
   assert.equal(forced.force, true);
   assert.equal(forced.officialNoticeCacheHours, 0);
 });
 
 test("CLI help describes the active official-announcement query generically", () => {
-  assert.match(HELP, /跳过官方公告查询/);
+  assert.doesNotMatch(HELP, /跳过官方公告查询/);
 });
 
 test("queries both indexes while excluding USD shares and exchange ETFs by default", async () => {
@@ -70,13 +70,42 @@ test("accepts only unexpired user-verified channel records", async () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-channel-"));
   const channelsFile = path.join(outputDir, "channels.json");
   fs.writeFileSync(channelsFile, JSON.stringify([
-    { index: "nasdaq100", code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", channel: "基金公司直销", status: "limited", limitAmount: 10000, sourceUrl: "https://example.com/current", verifiedAt: "2026-07-12T00:00:00.000Z", expiresAt: "2026-07-13T00:00:00.000Z" },
-    { index: "nasdaq100", code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", channel: "过期渠道", status: "open", limitAmount: null, sourceUrl: "https://example.com/stale", verifiedAt: "2026-07-01T00:00:00.000Z", expiresAt: "2026-07-02T00:00:00.000Z" }
+    { index: "nasdaq100", code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", channel: "基金公司直销", channelBucket: "fund-manager-direct", status: "limited", limitAmount: 10000, sourceUrl: "https://example.com/current", verifiedAt: "2026-07-12T00:00:00.000Z", expiresAt: "2026-07-13T00:00:00.000Z" },
+    { index: "nasdaq100", code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", channel: "过期渠道", channelBucket: "sales-agency", status: "open", limitAmount: null, sourceUrl: "https://example.com/stale", verifiedAt: "2026-07-01T00:00:00.000Z", expiresAt: "2026-07-02T00:00:00.000Z" }
   ]));
   const payload = await runQuery({ index: "nasdaq100", includeUsd: false, includeEtf: false, outputDir, channelsFile, queriedAt: "2026-07-12T01:10:00.000Z", fetchText: fixtureFetch(100), save: false });
   assert.ok(payload.rows.some((row) => row.channel === "基金公司直销"));
   assert.ok(!payload.rows.some((row) => row.channel === "过期渠道"));
-  assert.ok(payload.warnings.some((warning) => warning.includes("过期渠道")));
+  assert.ok(payload.warnings.some((warning) => warning.includes("已过期")));
+});
+
+test("sanitizes custom source URLs and writes saved data with private permissions", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-private-output-"));
+  const channelsFile = path.join(outputDir, "channels.json");
+  fs.writeFileSync(channelsFile, JSON.stringify([
+    { code: "019441", channel: "示例银行", channelBucket: "sales-agency", status: "limited", limitAmount: 100, sourceUrl: "https://example.com/path?token=secret&id=123#person", verifiedAt: "2026-07-12T00:00:00.000Z", expiresAt: "2026-07-13T00:00:00.000Z" },
+    { code: "019441", channel: "认证链接", channelBucket: "sales-agency", status: "open", sourceUrl: "https://user:password@example.com/private", verifiedAt: "2026-07-12T00:00:00.000Z", expiresAt: "2026-07-13T00:00:00.000Z" }
+  ]));
+  const payload = await runQuery({ index: "nasdaq100", outputDir, channelsFile, queriedAt: "2026-07-12T01:10:00.000Z", fetchText: fixtureFetch(100), save: true });
+  const custom = payload.rows.find((row) => row.channel === "示例银行");
+  assert.equal(custom.sourceUrl, "https://example.com/path");
+  assert.equal(payload.rows.some((row) => row.channel === "认证链接"), false);
+  assert.equal(fs.statSync(outputDir).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(path.join(outputDir, "latest.json")).mode & 0o777, 0o600);
+});
+
+test("detects a direct-sale announcement amount change", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-direct-change-"));
+  const noticeFetcher = (amount) => async () => ({
+    byCode: { "019441": { id: String(amount), title: "直销限额", date: "2026-07-12", url: "https://example.com/direct.pdf", parsed: {
+      parsed: true, effectiveDate: "2026-07-12", shareCodes: ["019441"],
+      limits: [{ scope: "specific-channel", channels: ["基金公司直销"], accountBasis: "single-fund-account-daily-cumulative-per-share", effectiveDate: "2026-07-12", perShareLimits: { "019441": { amount, currency: "CNY" } } }], parseWarnings: []
+    } } }, errors: []
+  });
+  await runQuery({ index: "nasdaq100", outputDir, queriedAt: "2026-07-12T01:10:00.000Z", fetchText: fixtureFetch(100), officialNotices: true, officialNoticeCacheHours: 0, officialNoticeFetcher: noticeFetcher(1000), save: true });
+  const payload = await runQuery({ index: "nasdaq100", outputDir, queriedAt: "2026-07-12T06:30:00.000Z", fetchText: fixtureFetch(100), officialNotices: true, officialNoticeCacheHours: 0, officialNoticeFetcher: noticeFetcher(100), save: true });
+  const directChange = payload.changes.find((change) => (change.after || change.before).channelBucket === "fund-manager-direct");
+  assert.equal(directChange.type, "amount-decreased");
 });
 
 test("does not turn a transient fetch failure into a status change or overwrite the last valid baseline", async () => {
@@ -117,6 +146,36 @@ test("does not save any comparison baseline from a degraded query", async () => 
   const recovered = await runQuery({ index: "all", outputDir, queriedAt: "2026-07-12T09:30:00.000Z", fetchText: fixtureFetch(10), save: true });
   assert.equal(recovered.changes.length, 1);
   assert.equal(recovered.changes[0].type, "amount-decreased");
+});
+
+test("does not report removals or update the baseline when the discovered catalog shrinks", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-catalog-shrink-"));
+  await runQuery({ index: "all", outputDir, queriedAt: "2026-07-12T01:10:00.000Z", fetchText: fixtureFetch(100), save: true });
+  const baseline = fs.readFileSync(path.join(outputDir, "state.json"), "utf8");
+  const catalogOnlyOneFund = async (url) => {
+    if (url.includes("fundcode_search")) return 'var r = [["000001","拼音","测试纳斯达克100(QDII)A","类型","拼音"]];';
+    return '<div>交易状态 限大额 单日累计申购上限100元</div>';
+  };
+  const payload = await runQuery({ index: "all", outputDir, queriedAt: "2026-07-12T06:30:00.000Z", fetchText: catalogOnlyOneFund, save: true });
+  assert.equal(payload.exitCode, 2);
+  assert.equal(payload.health.status, "degraded");
+  assert.equal(payload.changesEvaluated, false);
+  assert.deepEqual(payload.changes, []);
+  assert.equal(fs.readFileSync(path.join(outputDir, "state.json"), "utf8"), baseline);
+});
+
+test("records a completed time after the query started", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-completed-at-"));
+  const payload = await runQuery({
+    index: "nasdaq100",
+    outputDir,
+    queriedAt: "2026-07-12T01:10:00.000Z",
+    completedAt: "2026-07-12T01:10:05.000Z",
+    fetchText: fixtureFetch(100),
+    save: false
+  });
+  assert.equal(payload.startedAt, "2026-07-12T01:10:00.000Z");
+  assert.equal(payload.completedAt, "2026-07-12T01:10:05.000Z");
 });
 
 test("rejects invalid dates, unsafe links, and non-positive amounts in channel records", async () => {
@@ -230,7 +289,7 @@ test("keeps direct-sale announcement evidence separate when the public sales cha
           "111111": {
             id: "9", title: "直销限额公告", date: "2026-07-10", url: "https://example.com/example.pdf",
             parsed: {
-              parsed: true, effectiveDate: "2026-07-11", scope: "specific-channel", channels: ["基金公司直销"],
+              parsed: true, effectiveDate: "2026-07-11", scope: "specific-channel", channels: ["基金公司直销"], accountBasis: "single-fund-account-daily-cumulative-per-share",
               perShareLimits: { "222222": { amount: 100, currency: "CNY" } },
               limits: [{ scope: "specific-channel", channels: ["基金公司直销"], perShareLimits: { "222222": { amount: 100, currency: "CNY" } } }],
               parseWarnings: []
@@ -264,8 +323,8 @@ test("direct-sale evidence keeps only the currently effective rule per share", a
           parsed: {
             parsed: true, effectiveDate: "2026-07-10", shareCodes: ["019441"],
             limits: [
-              { scope: "specific-channel", channels: ["基金公司直销"], effectiveDate: "2026-07-10", noticeUrl: "https://example.com/current.pdf", perShareLimits: { "019441": { amount: 300, currency: "CNY" } } },
-              { scope: "specific-channel", channels: ["基金公司直销"], effectiveDate: "2026-06-01", noticeUrl: "https://example.com/old.pdf", perShareLimits: { "019441": { amount: 100, currency: "CNY" } } }
+              { scope: "specific-channel", channels: ["基金公司直销"], accountBasis: "single-fund-account-daily-cumulative-per-share", effectiveDate: "2026-07-10", noticeUrl: "https://example.com/current.pdf", perShareLimits: { "019441": { amount: 300, currency: "CNY" } } },
+              { scope: "specific-channel", channels: ["基金公司直销"], accountBasis: "single-fund-account-daily-cumulative-per-share", effectiveDate: "2026-06-01", noticeUrl: "https://example.com/old.pdf", perShareLimits: { "019441": { amount: 100, currency: "CNY" } } }
             ], parseWarnings: []
           }
         }
@@ -276,6 +335,28 @@ test("direct-sale evidence keeps only the currently effective rule per share", a
   assert.equal(payload.officialChannelEvidence.length, 1);
   assert.equal(payload.officialChannelEvidence[0].amount, 300);
   assert.equal(payload.officialChannelEvidence[0].noticeUrl, "https://example.com/current.pdf");
+});
+
+test("excludes direct-sale amounts whose daily account basis is unknown", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-direct-basis-"));
+  const payload = await runQuery({
+    index: "nasdaq100", outputDir, queriedAt: "2026-07-13T01:10:00.000Z",
+    fetchText: fixtureFetch(10), save: false, officialNotices: true,
+    officialNoticeFetcher: async () => ({
+      byCode: {
+        "019441": {
+          id: "basis", title: "直销额度公告", date: "2026-07-10", url: "https://example.com/basis.pdf",
+          parsed: {
+            parsed: true, effectiveDate: "2026-07-10", shareCodes: ["019441"],
+            limits: [{ scope: "specific-channel", channels: ["基金公司直销"], accountBasis: "unknown", effectiveDate: "2026-07-10", perShareLimits: { "019441": { amount: 300, currency: "CNY" } } }],
+            parseWarnings: []
+          }
+        }
+      }, errors: []
+    })
+  });
+
+  assert.deepEqual(payload.officialChannelEvidence, []);
 });
 
 test("reports announcement-index and manager-website coverage separately", async () => {
@@ -295,7 +376,7 @@ test("reports announcement-index and manager-website coverage separately", async
     },
     parsed: {
       parsed: true, effectiveDate: "2026-07-07", scope: "multi-event", channels: [],
-      limits: [{ scope: "specific-channel", channels: ["基金公司直销"], effectiveDate: "2026-07-07", perShareLimits: {
+      limits: [{ scope: "specific-channel", channels: ["基金公司直销"], accountBasis: "single-fund-account-daily-cumulative-per-share", effectiveDate: "2026-07-07", perShareLimits: {
         "015299": { amount: 300, currency: "CNY" }, "015300": { amount: 300, currency: "CNY" }
       }}], parseWarnings: []
     }
