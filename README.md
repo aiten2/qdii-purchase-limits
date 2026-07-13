@@ -4,6 +4,24 @@
 
 它可以查询当前申购限额、整理基金公司直销公告限额、记录额度变化，并可选启用每日自动查询和变化通知。项目只提供公开信息查询，不提供基金推荐、收益排名、交易信号或投资建议。
 
+## 支持的 Agent
+
+| Agent / 工具 | 安装位置或方式 | 调用方式 |
+| --- | --- | --- |
+| [Codex](https://developers.openai.com/codex/skills) | `~/.codex/skills/` | 明确指定 `qdii-purchase-limits` |
+| [Claude Code](https://code.claude.com/docs/en/skills) | `~/.claude/skills/` | `/qdii-purchase-limits` |
+| [GitHub Copilot](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/add-skills) | `~/.copilot/skills/` | `/qdii-purchase-limits` |
+| [Gemini CLI](https://geminicli.com/docs/cli/skills/) | `gemini skills install <仓库地址>` | 明确指定 `qdii-purchase-limits` |
+| [Qwen Code](https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/) | `~/.qwen/skills/` | `/qdii-purchase-limits` |
+| [TRAE / TRAE CN（条件支持）](https://forum.trae.cn/t/topic/19344) | `.agents/skills/` | 以当前客户端提示为准 |
+| [Kimi Code CLI](https://www.kimi.com/code/docs/kimi-code-cli/customization/skills.html) | `~/.kimi-code/skills/` | `/skill:qdii-purchase-limits` |
+| [CodeBuddy Code](https://www.codebuddy.cn/docs/cli/skills) | `~/.codebuddy/skills/` | 明确指定 `qdii-purchase-limits` |
+| [腾讯 WorkBuddy（条件支持）](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) | 在技能页面导入完整 Skill 包 | 需允许脚本和网络访问 |
+| [Qoder IDE / CLI](https://docs.qoder.com/zh/extensions/skills) | `~/.qoder/skills/` | `/qdii-purchase-limits` |
+| [华为云码道 CodeArts Doer](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0019.html) | `~/.codeartsdoer/skills/` | 明确指定 `qdii-purchase-limits` |
+
+完整功能需要 Agent 能够读取本地 Skill、执行 Node.js 命令并访问公开网络。TRAE 不同版本的 Skill 目录可能不同，请以当前客户端提示为准。
+
 ## 功能
 
 - 查询纳斯达克100和标普500相关人民币场外基金。
@@ -17,48 +35,15 @@
 
 将下面这段话发送给支持 Agent Skills 和本地命令执行的 AI：
 
-> 请从 https://github.com/aiten2/qdii-purchase-limits 安装 `qdii-purchase-limits` Skill。必须克隆完整仓库：Qwen Code 放到 `~/.qwen/skills/`，Kimi Code CLI 放到 `~/.kimi-code/skills/`，CodeBuddy Code 放到 `~/.codebuddy/skills/`，Qoder 放到 `~/.qoder/skills/`，华为云码道放到 `~/.codeartsdoer/skills/`；其他工具使用其官方 Skill 目录。确认 `SKILL.md` 和 `scripts/query-purchase-limits.js` 均存在，在 Skill 目录运行 `npm ci --omit=optional --ignore-scripts` 和 `npm test`，然后告诉我安装位置和验证结果。不要启用定时任务或配置通知。
-
-完整功能需要 Agent 能够读取本地 Skill、执行 Node.js 命令并访问公开网络。
-
-## 国内 Agent
-
-| Agent / 工具 | 支持情况 | 用户级安装目录 | 显式调用 |
-| --- | --- | --- | --- |
-| [Qwen Code](https://qwenlm.github.io/qwen-code-docs/en/users/features/skills/) | 完整支持 | `~/.qwen/skills/qdii-purchase-limits/` | `/qdii-purchase-limits` |
-| [Kimi Code CLI](https://www.kimi.com/code/docs/kimi-code-cli/customization/skills.html) | 完整支持 | `~/.kimi-code/skills/qdii-purchase-limits/` | `/skill:qdii-purchase-limits` |
-| [CodeBuddy Code](https://www.codebuddy.cn/docs/cli/skills) | 完整支持 | `~/.codebuddy/skills/qdii-purchase-limits/` | 明确指定 `qdii-purchase-limits` |
-| [Qoder IDE / CLI](https://docs.qoder.com/zh/extensions/skills) | 完整支持 | `~/.qoder/skills/qdii-purchase-limits/` | `/qdii-purchase-limits` |
-| [华为云码道 CodeArts Doer](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0019.html) | 完整支持 | `~/.codeartsdoer/skills/qdii-purchase-limits/` | 明确指定 `qdii-purchase-limits` |
-| [腾讯 WorkBuddy](https://www.codebuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Skills-Market) | 条件支持 | 在技能页面导入完整本地 Skill 包 | 需允许脚本和网络访问 |
-| [TRAE / TRAE CN](https://forum.trae.cn/t/topic/19344) | 条件支持 | 优先使用项目目录 `.agents/skills/qdii-purchase-limits/` | 以当前客户端导入提示为准 |
-
-TRAE 不同版本的全局目录存在差异。其他工具只有在支持完整 Skill 目录、本地 Node.js 和公开网络访问时，才能运行实时查询。
+> 请从 https://github.com/aiten2/qdii-purchase-limits 安装 `qdii-purchase-limits` Skill。请使用你当前 Agent 的官方 Skill 目录并克隆完整仓库，确认 `SKILL.md` 和 `scripts/query-purchase-limits.js` 均存在，在 Skill 目录运行 `npm ci --omit=optional --ignore-scripts` 和 `npm test`，然后告诉我安装位置和验证结果。不要启用定时任务或配置通知。
 
 ### 手动安装
 
-选择对应目录执行：
+除 Gemini CLI 外，在上表对应的 Skill 目录执行：
 
 ```bash
-# Qwen Code
 git clone https://github.com/aiten2/qdii-purchase-limits.git \
-  ~/.qwen/skills/qdii-purchase-limits
-
-# Kimi Code CLI
-git clone https://github.com/aiten2/qdii-purchase-limits.git \
-  ~/.kimi-code/skills/qdii-purchase-limits
-
-# CodeBuddy Code
-git clone https://github.com/aiten2/qdii-purchase-limits.git \
-  ~/.codebuddy/skills/qdii-purchase-limits
-
-# Qoder IDE / CLI
-git clone https://github.com/aiten2/qdii-purchase-limits.git \
-  ~/.qoder/skills/qdii-purchase-limits
-
-# 华为云码道 CodeArts Doer
-git clone https://github.com/aiten2/qdii-purchase-limits.git \
-  ~/.codeartsdoer/skills/qdii-purchase-limits
+  <你的 Agent Skill 目录>/qdii-purchase-limits
 ```
 
 安装依赖并验证：
@@ -68,15 +53,6 @@ cd <Skill 安装目录>/qdii-purchase-limits
 npm ci --omit=optional --ignore-scripts
 npm test
 ```
-
-## 其他 Agent
-
-| Agent / 工具 | 推荐安装方式 |
-| --- | --- |
-| Codex | `~/.codex/skills/qdii-purchase-limits/` 或 `~/.agents/skills/qdii-purchase-limits/` |
-| Claude Code | `~/.claude/skills/qdii-purchase-limits/` |
-| Gemini CLI | `gemini skills install https://github.com/aiten2/qdii-purchase-limits` |
-| VS Code / GitHub Copilot | `.agents/skills/qdii-purchase-limits/` 或 `.github/skills/qdii-purchase-limits/` |
 
 ## 查询
 
