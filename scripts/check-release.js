@@ -52,6 +52,8 @@ function checkRelease(root, options) {
     if (skill.split("\n").length > 500) errors.push("SKILL.md 超过 500 行");
     if (!/必须实际运行 `scripts\/query-purchase-limits\.js`/.test(skill)) errors.push("SKILL.md 缺少强制脚本执行约束");
     if (!/唯一入口[\s\S]*标准输出原样回复/.test(skill)) errors.push("SKILL.md 缺少确定性查询入口或原样输出约束");
+    if (!/最终回复必须且只能包含本次脚本的完整标准输出[\s\S]*前后不得添加/.test(skill)) errors.push("SKILL.md 缺少禁止 Agent 追加解释的严格输出边界");
+    if (!/普通的“查询”[\s\S]*不得自行添加 `--details`[\s\S]*本次请求中明确要求/.test(skill)) errors.push("SKILL.md 缺少 --details 的显式授权边界");
     if (!/不得用其他网页工具替代脚本/.test(skill)) errors.push("SKILL.md 缺少禁止模型自行浏览替代脚本的约束");
     if (!/无法执行 Node\.js[\s\S]*不得模拟/.test(skill)) errors.push("SKILL.md 缺少不可执行时的降级约束");
     if (!/默认固定输出四个区块[\s\S]*代销渠道｜纳斯达克100[\s\S]*基金公司直销｜纳斯达克100[\s\S]*代销渠道｜标普500[\s\S]*基金公司直销｜标普500/.test(skill)) errors.push("SKILL.md 缺少四区块固定输出顺序");

@@ -53,10 +53,13 @@ function isRetryablePdfError(error) {
 
 async function getBuffer(url, options) {
   const settings = Object.assign({
-    timeoutMs: 20000,
+    timeoutMs: 10000,
     maxPdfBytes: 8 * 1024 * 1024,
-    retries: 2,
-    retryBaseMs: 500
+    retries: 4,
+    retryBaseMs: 1000,
+    retryJitterMs: 250,
+    random: Math.random,
+    sleep: (delay) => new Promise((resolve) => setTimeout(resolve, delay))
   }, options);
   const request = settings.requestBuffer || requestBuffer;
   let lastError;
@@ -66,7 +69,8 @@ async function getBuffer(url, options) {
     } catch (error) {
       lastError = error;
       if (attempt >= settings.retries || !isRetryablePdfError(error)) throw error;
-      await new Promise((resolve) => setTimeout(resolve, settings.retryBaseMs * (attempt + 1)));
+      const jitter = settings.retryJitterMs > 0 ? Math.floor(settings.random() * settings.retryJitterMs) : 0;
+      await settings.sleep(settings.retryBaseMs * (2 ** attempt) + jitter);
     }
   }
   throw lastError;
@@ -225,6 +229,10 @@ async function collectLatestOfficialNotices(funds, options) {
     parseOfficialNoticeText,
     classifyNoticeTitle,
     concurrency: settings.concurrency,
+    pdfConcurrency: settings.pdfConcurrency,
+    pdfEventCache: settings.pdfEventCache,
+    parserVersion: settings.parserVersion,
+    queriedAt: settings.queriedAt,
     maxNotices: settings.maxAnnouncementNotices
   });
   const withAnnouncementByCode = {};
@@ -272,6 +280,15 @@ async function collectLatestOfficialNotices(funds, options) {
   return {
     byCode,
     errors: [...(announcementResult.errors || []), ...(managerResult.errors || [])],
+    pdfEventCache: announcementResult.pdfEventCache || settings.pdfEventCache,
+    diagnostics: {
+      sourceFailureCount: Number(announcementResult.diagnostics && announcementResult.diagnostics.sourceFailureCount || 0)
+        + Number((managerResult.errors || []).length),
+      parseFailureCount: Number(announcementResult.diagnostics && announcementResult.diagnostics.parseFailureCount || 0),
+      resolvedBySharedNoticeOrCache: Number(announcementResult.diagnostics && announcementResult.diagnostics.resolvedBySharedNoticeOrCache || 0),
+      cacheHitNoticeCount: Number(announcementResult.diagnostics && announcementResult.diagnostics.cacheHitNoticeCount || 0),
+      downloadedNoticeCount: Number(announcementResult.diagnostics && announcementResult.diagnostics.downloadedNoticeCount || 0)
+    },
     sourceCoverage: {
       announcementIndex: announcementResult.coverage || { eligible: unique.length, checked: 0, found: 0, errors: 0 },
       managerWebsites: managerCoverage

@@ -14,17 +14,21 @@ const {
 
 test("retries a transient official PDF HTTP failure", async () => {
   let attempts = 0;
+  const delays = [];
   const buffer = await getBuffer("https://example.com/notice.pdf", {
-    retries: 2,
-    retryBaseMs: 0,
+    retries: 4,
+    retryBaseMs: 1000,
+    retryJitterMs: 0,
+    sleep: async (delay) => { delays.push(delay); },
     requestBuffer: async () => {
       attempts += 1;
-      if (attempts === 1) throw new Error("官方公告 PDF HTTP 567");
+      if (attempts < 5) throw new Error("官方公告 PDF HTTP 567");
       return Buffer.from("pdf");
     }
   });
 
-  assert.equal(attempts, 2);
+  assert.equal(attempts, 5);
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000]);
   assert.equal(buffer.toString(), "pdf");
 });
 
@@ -45,14 +49,22 @@ test("official source coverage only exposes active announcement sources", async 
 
 test("passes the configured concurrency to the announcement collector", async () => {
   let receivedConcurrency = null;
+  let receivedPdfConcurrency = null;
+  let receivedParserVersion = null;
   await collectLatestOfficialNotices([], {
     concurrency: 4,
+    pdfConcurrency: 2,
+    parserVersion: 11,
     announcementIndexFetcher: async (_funds, options) => {
       receivedConcurrency = options.concurrency;
+      receivedPdfConcurrency = options.pdfConcurrency;
+      receivedParserVersion = options.parserVersion;
       return { byCode: {}, errors: [], checkedCodes: [], coverage: { eligible: 0, checked: 0, found: 0, errors: 0 } };
     }
   });
   assert.equal(receivedConcurrency, 4);
+  assert.equal(receivedPdfConcurrency, 2);
+  assert.equal(receivedParserVersion, 11);
 });
 const { compareOfficialLimit } = require("../scripts/lib/official-pdf");
 

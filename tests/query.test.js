@@ -177,6 +177,36 @@ test("keeps successful official notices in cache after a degraded query", async 
   assert.equal(updatedCache.byCode["019441"].notice.id, "fresh");
   assert.equal(updatedCache.byCode["017641"], undefined);
   assert.equal(payload.changesEvaluated, false);
+  assert.equal(payload.officialNotices.sourceFailureCount, 1);
+  assert.equal(payload.officialNotices.unresolvedFundCount, 1);
+  assert.equal(payload.officialNotices.errors, 1);
+});
+
+test("persists successful immutable PDF event cache entries during a degraded query", async () => {
+  const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-pdf-event-cache-"));
+  const noticeId = "AN202606231823757896";
+  const payload = await runQuery({
+    index: "all", outputDir, queriedAt: "2026-07-12T06:30:00.000Z",
+    fetchText: fixtureFetch(10), officialNotices: true, officialNoticeCacheHours: 0,
+    officialNoticeFetcher: async (_funds, options) => {
+      options.pdfEventCache.entries[`${options.parserVersion}:${noticeId}`] = {
+        noticeId, parserVersion: options.parserVersion, url: `https://example.com/${noticeId}.pdf`, parsedAt: "2026-07-12T06:30:00.000Z",
+        parsed: { parsed: true, shareCodes: ["019441"], limits: [] }
+      };
+      return {
+        byCode: {},
+        errors: [{ code: "019441", source: "announcement-index", message: "官方公告 PDF HTTP 567" }],
+        diagnostics: { sourceFailureCount: 1, resolvedBySharedNoticeOrCache: 0 }
+      };
+    },
+    save: true
+  });
+
+  const cache = JSON.parse(fs.readFileSync(path.join(outputDir, "official-pdf-event-cache.json"), "utf8"));
+  assert.ok(cache.entries[`${OFFICIAL_NOTICE_CACHE_VERSION}:${noticeId}`]);
+  assert.equal(payload.changesEvaluated, false);
+  assert.equal(payload.officialNotices.sourceFailureCount, 1);
+  assert.equal(payload.officialNotices.unresolvedFundCount, 1);
 });
 
 test("does not turn a transient fetch failure into a status change or overwrite the last valid baseline", async () => {
@@ -463,7 +493,9 @@ test("reports announcement-index and manager-website coverage separately", async
 
   assert.deepEqual(payload.officialNotices.sources.announcementIndex, { eligible: 2, checked: 2, found: 2, errors: 0 });
   assert.deepEqual(payload.officialNotices.sources.managerWebsites, { supported: 2, checked: 2, found: 2, errors: 1 });
-  assert.equal(payload.officialNotices.errors, 1);
+  assert.equal(payload.officialNotices.errors, 0);
+  assert.equal(payload.officialNotices.sourceFailureCount, 1);
+  assert.equal(payload.officialNotices.unresolvedFundCount, 0);
   assert.equal(payload.officialChannelEvidence.length, 2);
 });
 

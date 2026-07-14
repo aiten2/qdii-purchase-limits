@@ -238,3 +238,34 @@ test("extracts an unchanged share limit explicitly preserved by a newer notice",
   assert.equal(parsed.perShareLimits["016453"].amount, 10);
   assert.equal(parsed.perShareLimits["021000"].amount, 1000);
 });
+
+test("parses parenthesized RMB share classes and keeps named sales channels separate", () => {
+  const parsed = parseOfficialNoticeText(`
+    公告送出日期：2026年6月23日
+    下属分级基金的基金简称 博时标普500ETF联接E（人民币）
+    下属分级基金的交易代码 018738
+    2026年6月24日起，投资人通过各代销机构（博时财富基金销售有限公司除外）申购本基金E类人民币份额，单日每个基金账户累计金额应不超过100元。
+    2026年6月24日起，投资人通过博时财富基金销售有限公司申购本基金E类人民币份额，单日每个基金账户累计金额应不超过500元。
+    2026年6月24日起，投资人通过本公司直销渠道申购本基金E类人民币份额，单日每个基金账户累计金额应不超过500元。
+  `);
+
+  assert.equal(parsed.parsed, true);
+  assert.equal(parsed.limits.find((rule) => rule.scope === "sales-agency").perShareLimits["018738"].amount, 100);
+  assert.equal(parsed.limits.find((rule) => rule.channels.includes("博时财富基金销售有限公司")).perShareLimits["018738"].amount, 500);
+  assert.equal(parsed.limits.find((rule) => rule.channels.includes("基金公司直销")).perShareLimits["018738"].amount, 500);
+  assert.equal(parsed.accountBasis, "single-fund-account-daily-cumulative");
+});
+
+test("parses different limits for RMB share classes in one narrative paragraph", () => {
+  const parsed = parseOfficialNoticeText(`
+    公告送出日期：2026年4月9日
+    下属分级基金的基金简称 博时标普500ETF联接A（人民币） 博时标普500ETF联接A（美元现汇） 博时标普500ETF联接C（美元现汇） 博时标普500ETF联接C（人民币） 博时标普500ETF联接E（人民币）
+    下属分级基金的交易代码 050025 013425 013499 006075 018738
+    自2026年4月10日起，投资人申购本基金A类人民币份额单日累计金额应不超过100元人民币，申购本基金C类人民币份额单日累计金额应不超过100元人民币，申购本基金E类人民币份额单日累计金额应不超过2000元人民币。
+  `);
+
+  assert.equal(parsed.parsed, true);
+  assert.equal(parsed.perShareLimits["050025"].amount, 100);
+  assert.equal(parsed.perShareLimits["006075"].amount, 100);
+  assert.equal(parsed.perShareLimits["018738"].amount, 2000);
+});

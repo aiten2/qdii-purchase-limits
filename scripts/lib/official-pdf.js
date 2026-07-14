@@ -64,7 +64,8 @@ function classifyCodeShares(text, codes) {
   const result = Object.fromEntries(codes.map((code) => [code, { currency: "CNY", shareClass: null }]));
   const namesBlock = source.match(/下属(?:分级基金|基金份额)的(?:基金)?简称(.*?)(?:下属(?:分级基金|基金份额)的(?:交易)?代码|下属基金份(?:\d{6}){2,20}额的交易代码)/);
   if (!namesBlock) return result;
-  const labels = namesBlock[1].match(/(?:[A-Z](?:美元现钞|美元现汇|人民币|美元|美钞|美汇)|(?:美元现钞|美元现汇|人民币|美元|美钞|美汇)[A-Z]|美元现钞|美元现汇|美钞|美汇)/g) || [];
+  const currency = "美元现钞|美元现汇|人民币|美元|美钞|美汇";
+  const labels = namesBlock[1].match(new RegExp(`(?:[A-Z](?:[（(])?(?:${currency})(?:[）)])?|(?:${currency})(?:[（(])?[A-Z](?:[）)])?|美元现钞|美元现汇|美钞|美汇)`, "g")) || [];
   if (labels.length === codes.length) {
     labels.forEach((label, index) => {
       result[codes[index]] = {
@@ -118,6 +119,17 @@ function amountCandidates(text, currency) {
   return candidates;
 }
 
+function scopeForRuleText(ruleText, fallbackScope, allowFallback) {
+  if (/直销电子交易平台|直销机构|直销渠道/.test(ruleText)) {
+    return { scope: "specific-channel", channels: ["基金公司直销"] };
+  }
+  if (/代销机构/.test(ruleText)) return { scope: "sales-agency", channels: ["代销机构"] };
+  const namedSalesChannel = ruleText.match(/通过([^，。；]{2,50}?基金销售有限公司)(?:申购|办理)/);
+  if (namedSalesChannel) return { scope: "specific-channel", channels: [namedSalesChannel[1]] };
+  if (allowFallback && fallbackScope.scope === "specific-channel") return fallbackScope;
+  return { scope: "fund-manager-general", channels: [] };
+}
+
 function sentenceRules(text, codes, codeShares, fallbackScope) {
   const source = compactText(text);
   const sentences = source.split(/[。；;]/).filter(Boolean);
@@ -139,18 +151,7 @@ function sentenceRules(text, codes, codeShares, fallbackScope) {
       && (!classes.length || classes.includes(codeShares[code].shareClass))
     );
     if (!selectedCodes.length) return;
-    let scope = "fund-manager-general";
-    let channels = [];
-    if (/直销电子交易平台|直销机构|直销渠道/.test(ruleText)) {
-      scope = "specific-channel";
-      channels = ["基金公司直销"];
-    } else if (/代销机构/.test(ruleText)) {
-      scope = "sales-agency";
-      channels = ["代销机构"];
-    } else if (!hasExplicitChannelRule && fallbackScope.scope === "specific-channel") {
-      scope = "specific-channel";
-      channels = fallbackScope.channels;
-    }
+    const { scope, channels } = scopeForRuleText(ruleText, fallbackScope, !hasExplicitChannelRule);
     rules.push({
       scope,
       channels,
@@ -161,6 +162,40 @@ function sentenceRules(text, codes, codeShares, fallbackScope) {
   rules.forEach((rule) => {
     const limits = Object.entries(rule.perShareLimits).map(([code, amount]) => `${code}:${amount.currency}:${amount.amount}`).sort().join("|");
     uniqueRules.set(`${rule.scope}|${rule.channels.join("、")}|${limits}`, rule);
+  });
+  return [...uniqueRules.values()];
+}
+
+function classAmountRules(text, codes, codeShares, fallbackScope) {
+  const sentences = compactText(text).split(/[。；;]/).filter(Boolean);
+  const rules = [];
+  const amountPattern = /([A-Z])类(人民币|美元现钞|美元现汇|美元|美钞|美汇)?份额[^，。；]{0,160}?(?:不应|应不)超过([\d,.]+)(万元|人民币元|元人民币|元|美元)/g;
+  sentences.forEach((sentence) => {
+    const perScope = new Map();
+    let match;
+    while ((match = amountPattern.exec(sentence))) {
+      const amount = parseAmount(match[3], match[4]);
+      if (!amount) continue;
+      const declaredCurrency = /美元|美钞|美汇/.test(match[2] || "") ? "USD" : "CNY";
+      if (amount.currency !== declaredCurrency) continue;
+      const selectedCodes = codes.filter((code) => codeShares[code].shareClass === match[1]
+        && codeShares[code].currency === amount.currency);
+      if (!selectedCodes.length) continue;
+      const channel = scopeForRuleText(sentence, fallbackScope, true);
+      const key = `${channel.scope}|${channel.channels.join("、")}`;
+      if (!perScope.has(key)) perScope.set(key, Object.assign({}, channel, { perShareLimits: {} }));
+      selectedCodes.forEach((code) => { perScope.get(key).perShareLimits[code] = amount; });
+    }
+    rules.push(...perScope.values());
+  });
+  return rules;
+}
+
+function dedupeRules(rules) {
+  const uniqueRules = new Map();
+  rules.forEach((rule) => {
+    const limits = Object.entries(rule.perShareLimits || {}).map(([code, amount]) => `${code}:${amount.currency}:${amount.amount}`).sort().join("|");
+    uniqueRules.set(`${rule.scope}|${(rule.channels || []).join("、")}|${limits}`, rule);
   });
   return [...uniqueRules.values()];
 }
@@ -216,6 +251,8 @@ function parseOfficialNoticeText(text) {
   const codeShares = classifyCodeShares(normalized, codes);
   let scope = detectScope(normalized);
   const parsedSentenceRules = sentenceRules(normalized, codes, codeShares, scope);
+  const parsedClassRules = classAmountRules(normalized, codes, codeShares, scope);
+  const narrativeRules = dedupeRules([...parsedSentenceRules, ...parsedClassRules]);
   const channelRules = parseChannelRules(normalized, codes, codeShares);
   const perShareLimits = {};
   const warnings = [];
@@ -269,10 +306,10 @@ function parseOfficialNoticeText(text) {
   if (!announcementDate) warnings.push("未可靠提取公告日期");
   if (!effectiveDate) warnings.push("未可靠提取生效日期");
   if (!codes.length) warnings.push("未可靠提取基金份额代码");
-  if (!Object.keys(perShareLimits).length && !channelRules.length && !parsedSentenceRules.length) warnings.push("未可靠建立份额代码与限购额度的对应关系");
+  if (!Object.keys(perShareLimits).length && !channelRules.length && !narrativeRules.length) warnings.push("未可靠建立份额代码与限购额度的对应关系");
 
-  const limits = parsedSentenceRules.length
-    ? parsedSentenceRules
+  const limits = narrativeRules.length
+    ? narrativeRules
     : channelRules.length
       ? channelRules
     : Object.keys(perShareLimits).length
@@ -306,7 +343,7 @@ function parseOfficialNoticeText(text) {
     shareCodes: codes,
     perShareLimits: Object.keys(flattenedLimits).length ? flattenedLimits : perShareLimits,
     limits,
-    accountBasis: /单日单个基金账户/.test(compact)
+    accountBasis: /单日(?:单个|每个)基金账户/.test(compact)
       ? (/分别计算|不同份额单独计算/.test(compact)
         ? "single-fund-account-daily-cumulative-per-share"
         : "single-fund-account-daily-cumulative")

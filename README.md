@@ -79,13 +79,13 @@ node scripts/query-purchase-limits.js --details
 # 输出 JSON
 node scripts/query-purchase-limits.js --json
 
-# 跳过公告缓存并重新查询
+# 跳过份额时间线缓存并刷新公告索引；已解析的同 ID 公告 PDF 仍会安全复用
 node scripts/query-purchase-limits.js --force
 ```
 
 也可以直接对 Agent 说：
 
-> 使用 `qdii-purchase-limits` 查询今天的纳斯达克100和标普500基金申购限额，只运行 Skill 自带脚本并原样返回结果。
+> 使用 `qdii-purchase-limits` 查询今天的纳斯达克100和标普500基金申购限额。只运行 Skill 自带的默认查询脚本，不要添加 `--details`。最终回复只能包含脚本的完整标准输出，前后不要添加任何解释或总结。
 
 ## 输出
 
@@ -139,6 +139,7 @@ node scripts/query-purchase-limits.js --force
 | `latest.md` | 最新报告 |
 | `latest.json` | 最新结构化结果 |
 | `state.json` | 变化比较基线 |
+| `official-pdf-event-cache.json` | 按公告 ID 和解析器版本保存的本地解析缓存 |
 | `history/` | 最近 90 次查询快照 |
 
 第一次查询建立基线。从第二次开始，系统会提示额度提高、额度降低、状态变化以及记录新增或消失。数据不完整时不会覆盖上次有效基线。

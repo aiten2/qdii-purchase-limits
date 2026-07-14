@@ -112,6 +112,26 @@ function repairAnnouncementDate(parsed, date) {
   });
 }
 
+function createTaskLimiter(limit) {
+  const concurrency = Math.max(1, Number(limit) || 1);
+  let active = 0;
+  const queue = [];
+  const drain = () => {
+    while (active < concurrency && queue.length) {
+      const task = queue.shift();
+      active += 1;
+      Promise.resolve().then(task.run).then(task.resolve, task.reject).finally(() => {
+        active -= 1;
+        drain();
+      });
+    }
+  };
+  return (run) => new Promise((resolve, reject) => {
+    queue.push({ run, resolve, reject });
+    drain();
+  });
+}
+
 async function fetchFundNotices(fund, settings) {
   const fetcher = settings.fetchText || fetchAnnouncementText;
   let lastError;
@@ -130,7 +150,58 @@ async function fetchFundNotices(fund, settings) {
 }
 
 async function collectAnnouncementIndexNoticeEvents(funds, options) {
-  const settings = Object.assign({ maxNotices: 30, concurrency: 2, indexRetries: 2, indexRetryBaseMs: 500 }, options);
+  const settings = Object.assign({ maxNotices: 30, concurrency: 2, pdfConcurrency: 2, parserVersion: 1, indexRetries: 2, indexRetryBaseMs: 500 }, options);
+  const pdfEventCache = settings.pdfEventCache && settings.pdfEventCache.schemaVersion === 1 && settings.pdfEventCache.entries
+    ? settings.pdfEventCache
+    : { schemaVersion: 1, entries: {} };
+  const runPdfTask = createTaskLimiter(settings.pdfConcurrency);
+  const eventPromises = new Map();
+  const cachedEventIds = new Set();
+  const sourceFailures = new Set();
+  const parseFailures = new Set();
+  const resolvedBySharedNoticeOrCache = new Set();
+  let downloadedNoticeCount = 0;
+  const resolveNotice = (notice) => {
+    const cacheKey = `${settings.parserVersion}:${notice.id}`;
+    const cached = pdfEventCache.entries[cacheKey];
+    if (cached && cached.noticeId === notice.id && cached.url === notice.url
+      && cached.parserVersion === settings.parserVersion && cached.parsed) {
+      cachedEventIds.add(notice.id);
+      return Promise.resolve(Object.assign({}, notice, { parsed: cached.parsed }));
+    }
+    if (eventPromises.has(cacheKey)) return eventPromises.get(cacheKey);
+    const promise = runPdfTask(async () => {
+      let stage = "download";
+      try {
+        downloadedNoticeCount += 1;
+        const buffer = await settings.fetchBuffer(notice.url, settings);
+        stage = "extract-text";
+        const text = await settings.extractPdfText(buffer);
+        stage = "parse";
+        const parsed = repairAnnouncementDate(settings.parseOfficialNoticeText(text), notice.date);
+        const statusOnlyEvent = ["full-suspend", "resume"].includes(notice.category)
+          && (parsed && parsed.shareCodes || []).length > 0;
+        if (!parsed || (!parsed.parsed && !statusOnlyEvent)) {
+          const error = new Error("公告正文未能可靠解析");
+          error.shareCodes = parsed && parsed.shareCodes || [];
+          throw error;
+        }
+        pdfEventCache.entries[cacheKey] = {
+          noticeId: notice.id,
+          url: notice.url,
+          parsedAt: settings.queriedAt || new Date().toISOString(),
+          parserVersion: settings.parserVersion,
+          parsed
+        };
+        return Object.assign({}, notice, { parsed });
+      } catch (error) {
+        error.stage = stage;
+        throw error;
+      }
+    });
+    eventPromises.set(cacheKey, promise);
+    return promise;
+  };
   const unique = [...new Map((funds || []).map((fund) => [fund.code, fund])).values()];
   const groups = new Map();
   unique.forEach((fund) => {
@@ -153,6 +224,7 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
         });
       } catch (error) {
         indexErrors.set(fund.code, error.message);
+        sourceFailures.add(`index|${fund.code}|${error.message}`);
       }
     }
     try {
@@ -165,27 +237,19 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
       const events = [];
       const noticeFailures = [];
       for (const notice of orderedNotices) {
-        let stage = "download";
         try {
-          const buffer = await settings.fetchBuffer(notice.url, settings);
-          stage = "extract-text";
-          const text = await settings.extractPdfText(buffer);
-          stage = "parse";
-          const parsed = repairAnnouncementDate(settings.parseOfficialNoticeText(text), notice.date);
-          const statusOnlyEvent = ["full-suspend", "resume"].includes(notice.category)
-            && (parsed && parsed.shareCodes || []).length > 0;
-          if (!parsed || (!parsed.parsed && !statusOnlyEvent)) {
-            throw new Error("公告正文未能可靠解析");
-          }
-          const event = Object.assign({}, notice, { parsed });
-          events.push(event);
+          events.push(await resolveNotice(notice));
         } catch (error) {
+          const failureKey = `${notice.id}|${error.stage || "download"}|${error.message}`;
+          if (error.stage === "parse") parseFailures.add(failureKey);
+          else sourceFailures.add(failureKey);
           noticeFailures.push({
             noticeId: notice.id,
             noticeDate: notice.date,
             noticeTitle: notice.title,
-            stage,
-            message: error.message
+            stage: error.stage || "download",
+            message: error.message,
+            shareCodes: error.shareCodes || []
           });
         }
       }
@@ -195,10 +259,15 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
           return;
         }
         const matching = events.filter((event) => eventCoveredCodes(event).has(fund.code));
+        if (matching.some((event) => cachedEventIds.has(event.id)
+          || groupFunds.filter((item) => eventCoveredCodes(event).has(item.code)).length > 1)) {
+          resolvedBySharedNoticeOrCache.add(fund.code);
+        }
         const latestMatchingDate = matching.map((event) => event.date).filter(Boolean).sort().reverse()[0] || null;
         const blockingFailures = latestMatchingDate
-          ? noticeFailures.filter((failure) => !failure.noticeDate || failure.noticeDate >= latestMatchingDate)
-          : noticeFailures;
+          ? noticeFailures.filter((failure) => (!failure.shareCodes.length || failure.shareCodes.includes(fund.code))
+            && (!failure.noticeDate || failure.noticeDate >= latestMatchingDate))
+          : noticeFailures.filter((failure) => !failure.shareCodes.length || failure.shareCodes.includes(fund.code));
         if (blockingFailures.length) {
           const failure = blockingFailures.sort((left, right) => String(right.noticeDate).localeCompare(String(left.noticeDate)))[0];
           errors.push(Object.assign({ code: fund.code, source: "announcement-index" }, failure));
@@ -219,6 +288,15 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
       checked: checkedCodes.size,
       found: Object.keys(byCode).length,
       errors: errors.length
+    },
+    pdfEventCache,
+    diagnostics: {
+      sourceFailureCount: sourceFailures.size,
+      parseFailureCount: parseFailures.size,
+      unresolvedFundCount: new Set(errors.map((error) => error.code)).size,
+      resolvedBySharedNoticeOrCache: resolvedBySharedNoticeOrCache.size,
+      cacheHitNoticeCount: cachedEventIds.size,
+      downloadedNoticeCount
     }
   };
 }
@@ -230,6 +308,7 @@ module.exports = {
   collectAnnouncementIndexNoticeEvents,
   fetchAnnouncementText,
   fetchFundNotices,
+  createTaskLimiter,
   eventCoveredCodes,
   parseAnnouncementIndex,
   productKey,

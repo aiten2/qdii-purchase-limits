@@ -19,7 +19,7 @@ const HELP = `QDII 指数基金申购限额查询
   --min-coverage N              最低完整率，默认 0.9
   --history-limit N             保留历史快照数，默认 90
   --details                     输出暂停、不可买和未知项目的完整明细
-  --force                       跳过官方公告缓存并重新查询
+  --force                       跳过份额时间线缓存并刷新公告索引
   --json                        终端输出 JSON
   --no-save                     不保存快照与报告
   --help                        显示帮助

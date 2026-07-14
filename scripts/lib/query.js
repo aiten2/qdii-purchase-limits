@@ -7,7 +7,8 @@ const { managerSourceForFund } = require("./manager-notices");
 const { collectFundStatuses, discoverFunds } = require("./sources");
 const { renderMarkdown } = require("./report");
 
-const OFFICIAL_NOTICE_CACHE_VERSION = 10;
+const OFFICIAL_NOTICE_CACHE_VERSION = 11;
+const OFFICIAL_PDF_EVENT_CACHE_SCHEMA_VERSION = 1;
 const SUPPORTS_POSIX_PERMISSIONS = process.platform !== "win32";
 
 function readJson(filePath, fallback) {
@@ -261,10 +262,22 @@ async function runQuery(options) {
   let officialChannelEvidence = [];
   let pendingOfficialCache = null;
   let pendingOfficialCachePath = null;
+  let pendingPdfEventCache = null;
+  let pendingPdfEventCachePath = null;
   if (settings.officialNotices) {
     const targets = rows;
     const cachePath = path.join(settings.outputDir, "official-notice-cache.json");
     const cache = readJson(cachePath, { version: OFFICIAL_NOTICE_CACHE_VERSION, byCode: {} });
+    const pdfEventCachePath = path.join(settings.outputDir, "official-pdf-event-cache.json");
+    const loadedPdfEventCache = readJson(pdfEventCachePath, null);
+    const pdfEventCache = { schemaVersion: OFFICIAL_PDF_EVENT_CACHE_SCHEMA_VERSION, entries: {} };
+    if (loadedPdfEventCache && loadedPdfEventCache.schemaVersion === OFFICIAL_PDF_EVENT_CACHE_SCHEMA_VERSION
+      && loadedPdfEventCache.entries && typeof loadedPdfEventCache.entries === "object") {
+      Object.entries(loadedPdfEventCache.entries).forEach(([key, entry]) => {
+        if (entry && entry.parserVersion === OFFICIAL_NOTICE_CACHE_VERSION
+          && key === `${OFFICIAL_NOTICE_CACHE_VERSION}:${entry.noticeId}`) pdfEventCache.entries[key] = entry;
+      });
+    }
     const nowMs = new Date(queriedAt).getTime();
     const maxAgeMs = settings.officialNoticeCacheHours * 60 * 60 * 1000;
     const byCode = {};
@@ -276,8 +289,16 @@ async function runQuery(options) {
       else missing.push(fund);
     });
     const fetched = missing.length
-      ? await (settings.officialNoticeFetcher || collectLatestOfficialNotices)(missing, { concurrency: settings.concurrency })
+      ? await (settings.officialNoticeFetcher || collectLatestOfficialNotices)(missing, {
+        concurrency: settings.concurrency,
+        pdfConcurrency: 2,
+        pdfEventCache,
+        parserVersion: OFFICIAL_NOTICE_CACHE_VERSION,
+        queriedAt
+      })
       : { byCode: {}, errors: [] };
+    pendingPdfEventCache = fetched.pdfEventCache || pdfEventCache;
+    pendingPdfEventCachePath = pdfEventCachePath;
     Object.assign(byCode, fetched.byCode || {});
     const noticesByShareCode = {};
     Object.values(byCode).filter(Boolean).forEach((notice) => {
@@ -290,6 +311,9 @@ async function runQuery(options) {
     });
     const unresolvedErrors = (fetched.errors || []).filter((error) => !byCode[error.code]);
     const officialErrorsByCode = Object.fromEntries(unresolvedErrors.map((error) => [error.code, error.message]));
+    const sourceFailureCount = Number(fetched.diagnostics && fetched.diagnostics.sourceFailureCount);
+    const parseFailureCount = Number(fetched.diagnostics && fetched.diagnostics.parseFailureCount);
+    const unresolvedFundCount = new Set(unresolvedErrors.map((error) => error.code)).size;
     missing.forEach((fund) => {
       if (Object.prototype.hasOwnProperty.call(byCode, fund.code)) {
         cache.version = OFFICIAL_NOTICE_CACHE_VERSION;
@@ -333,7 +357,13 @@ async function runQuery(options) {
       found: notices.length,
       parsed: notices.filter((notice) => notice.parsed && notice.parsed.parsed).length,
       unparsed: notices.filter((notice) => !notice.parsed || !notice.parsed.parsed).length,
-      errors: (fetched.errors || []).length,
+      errors: unresolvedFundCount,
+      sourceFailureCount: Number.isFinite(sourceFailureCount) ? sourceFailureCount : (fetched.errors || []).length,
+      parseFailureCount: Number.isFinite(parseFailureCount) ? parseFailureCount : 0,
+      unresolvedFundCount,
+      resolvedBySharedNoticeOrCache: Number(fetched.diagnostics && fetched.diagnostics.resolvedBySharedNoticeOrCache || 0),
+      cacheHitNoticeCount: Number(fetched.diagnostics && fetched.diagnostics.cacheHitNoticeCount || 0),
+      downloadedNoticeCount: Number(fetched.diagnostics && fetched.diagnostics.downloadedNoticeCount || 0),
       sources: {
         announcementIndex: fetched.sourceCoverage && fetched.sourceCoverage.announcementIndex || {
           eligible: uniqueTargets.length,
@@ -349,7 +379,7 @@ async function runQuery(options) {
         }
       }
     };
-    if (officialNotices.errors) warnings.push(`官方公告来源出现 ${officialNotices.errors} 条失败记录；未被其他来源核验的项目保持未知。`);
+    if (officialNotices.unresolvedFundCount) warnings.push(`${officialNotices.unresolvedFundCount} 只基金因公告源临时异常未完成核验。`);
     if (officialNotices.unparsed) warnings.push(`有 ${officialNotices.unparsed} 份官方公告未能可靠提取额度；对应项目明确标记为未知。`);
   }
   const officialBlockedCodes = new Set(settings.officialNotices
@@ -429,12 +459,16 @@ async function runQuery(options) {
   if (settings.save && pendingOfficialCache && pendingOfficialCachePath) {
     writeAtomic(pendingOfficialCachePath, `${JSON.stringify(pendingOfficialCache, null, 2)}\n`);
   }
+  if (settings.save && pendingPdfEventCache && pendingPdfEventCachePath) {
+    writeAtomic(pendingPdfEventCachePath, `${JSON.stringify(pendingPdfEventCache, null, 2)}\n`);
+  }
   if (settings.save) savePayload(settings.outputDir, scope, payload, snapshot, previousState, settings.historyLimit, health.status === "ok");
   return payload;
 }
 
 module.exports = {
   OFFICIAL_NOTICE_CACHE_VERSION,
+  OFFICIAL_PDF_EVENT_CACHE_SCHEMA_VERSION,
   applyOfficialDecision,
   loadChannelRows,
   readJson,

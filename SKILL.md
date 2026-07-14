@@ -3,7 +3,7 @@ name: qdii-purchase-limits
 description: Use when users ask which Nasdaq 100 or S&P 500 QDII funds can be purchased today, want purchase limits sorted by amount, need direct-sale announcement limits, limit-change detection, or scheduled daily snapshots and change notifications.
 license: MIT
 metadata:
-  version: "1.12.5"
+  version: "1.12.6"
 ---
 
 # QDII Purchase Limits
@@ -34,6 +34,8 @@ node scripts/query-purchase-limits.js --index all --json
 
 - `scripts/query-purchase-limits.js` 是最新查询的唯一入口。回答可买额度、官方公告或变化情况时，必须实际运行 `scripts/query-purchase-limits.js`；不得只阅读本文件后自行搜索、逐页浏览、拼接或推算结果，也不得用其他网页工具替代脚本。
 - 命令成功后，默认把脚本标准输出原样回复给用户，不要二次总结、改写表格或添加解释。用户可见结论必须来自脚本本次生成的 `latest.md` 或 `latest.json`；不得自行增加链接、渠道名称、购买入口、核验过程、额度计算过程或推荐性措辞。
+- 最终回复必须且只能包含本次脚本的完整标准输出；第一字符到最后一个字符均以标准输出为准，前后不得添加开场白、结论、解释、纠错、自评、表格、链接或“执行完成”等文字。`--details` 只决定脚本是否生成逐只明细，不授权 Agent 在脚本输出之外自行总结。只有用户随后明确询问某项原因时，才可以脱离本条单独解释该问题。
+- 普通的“查询”“看看限额”或“今天哪些可以买”一律运行默认命令，不得自行添加 `--details`。只有用户在本次请求中明确要求“逐只明细”“暂停清单”或“全部状态”时，才允许使用 `--details`；历史命令、旧报告或 Agent 自己认为有帮助都不构成授权。
 - 必须安装并保留完整仓库。只复制 `SKILL.md`、删掉 `scripts/lib/` 或绕过测试，都不构成完整安装。
 - 当前 Agent 无法执行 Node.js、访问公开数据源或写入数据目录时，应明确说明完整功能不可运行，不得模拟“最新查询”。
 
@@ -69,6 +71,7 @@ node scripts/query-purchase-limits.js --index all --json
 - `latest.md`：最新人类可读报告。
 - `latest.json`：最新结构化结果。
 - `state.json`：各查询范围的比较基线。
+- `official-pdf-event-cache.json`：按公告 ID 和解析器版本保存的已解析公告；同 ID 直接复用，解析器升级后自动失效。
 - `history/`：最近 90 次快照。
 
 ## 渠道口径

@@ -132,6 +132,186 @@ test("retries a transient announcement index failure", async () => {
   assert.equal(result.coverage.checked, 1);
 });
 
+test("an unparsed share-specific notice does not block sibling share codes", async () => {
+  const funds = [
+    { code: "050025", name: "测试标普500联接A", index: "sp500" },
+    { code: "018738", name: "测试标普500联接E", index: "sp500" }
+  ];
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    concurrency: 1,
+    indexRetries: 0,
+    fetchText: async () => JSON.stringify({
+      ErrCode: 0,
+      Data: [
+        { NEWCATEGORY: "5", ID: "AN202606231823757896", TITLE: "E类份额调整大额申购公告", PUBLISHDATEDesc: "2026-06-23" },
+        { NEWCATEGORY: "5", ID: "AN202605081822057674", TITLE: "A类份额暂停申购公告", PUBLISHDATEDesc: "2026-05-08" }
+      ]
+    }),
+    fetchBuffer: async (url) => Buffer.from(url.includes("AN20260623") ? "e-limit" : "a-suspend"),
+    extractPdfText: async (buffer) => buffer.toString(),
+    parseOfficialNoticeText: (text) => text === "e-limit"
+      ? { parsed: false, shareCodes: ["018738"], limits: [], parseWarnings: ["无法解析额度"] }
+      : { parsed: false, shareCodes: ["050025"], limits: [], parseWarnings: ["状态公告"] }
+  });
+
+  assert.ok(result.byCode["050025"]);
+  assert.equal(result.byCode["018738"], undefined);
+  assert.deepEqual(result.errors.map((error) => error.code), ["018738"]);
+});
+
+test("reuses a parsed event cache entry for the same announcement id", async () => {
+  const noticeId = "AN202606231823757896";
+  let downloads = 0;
+  const result = await collectAnnouncementIndexNoticeEvents([
+    { code: "018738", name: "测试标普500联接E", index: "sp500" }
+  ], {
+    concurrency: 1,
+    parserVersion: 11,
+    pdfEventCache: {
+      schemaVersion: 1,
+      entries: {
+        [`11:${noticeId}`]: {
+          noticeId,
+          url: `https://pdf.dfcfw.com/pdf/H2_${noticeId}_1.pdf`,
+          parserVersion: 11,
+          parsedAt: "2026-07-13T08:22:47.050Z",
+          parsed: { parsed: true, shareCodes: ["018738"], limits: [{ scope: "sales-agency", channels: ["代销机构"], perShareLimits: { "018738": { amount: 100, currency: "CNY" } } }] }
+        }
+      }
+    },
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [{ NEWCATEGORY: "5", ID: noticeId, TITLE: "E类份额调整大额申购公告", PUBLISHDATEDesc: "2026-06-23" }] }),
+    fetchBuffer: async () => { downloads += 1; throw new Error("官方公告 PDF HTTP 567"); },
+    extractPdfText: async () => "",
+    parseOfficialNoticeText: () => null
+  });
+
+  assert.equal(downloads, 0);
+  assert.ok(result.byCode["018738"]);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.diagnostics.resolvedBySharedNoticeOrCache, 1);
+});
+
+test("does not let an older cached event hide a failed new announcement", async () => {
+  const oldId = "AN202604091821076801";
+  const newId = "AN202606231823757896";
+  const result = await collectAnnouncementIndexNoticeEvents([
+    { code: "018738", name: "测试标普500联接E", index: "sp500" }
+  ], {
+    concurrency: 1,
+    parserVersion: 11,
+    pdfEventCache: {
+      schemaVersion: 1,
+      entries: {
+        [`11:${oldId}`]: {
+          noticeId: oldId,
+          url: `https://pdf.dfcfw.com/pdf/H2_${oldId}_1.pdf`,
+          parserVersion: 11,
+          parsedAt: "2026-04-09T08:00:00.000Z",
+          parsed: { parsed: true, shareCodes: ["018738"], limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "018738": { amount: 2000, currency: "CNY" } } }] }
+        }
+      }
+    },
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [
+      { NEWCATEGORY: "5", ID: newId, TITLE: "E类份额调整大额申购公告", PUBLISHDATEDesc: "2026-06-23" },
+      { NEWCATEGORY: "5", ID: oldId, TITLE: "调整大额申购公告", PUBLISHDATEDesc: "2026-04-09" }
+    ] }),
+    fetchBuffer: async (url) => {
+      if (url.includes(newId)) throw new Error("官方公告 PDF HTTP 567");
+      throw new Error("旧公告不应重新下载");
+    },
+    extractPdfText: async () => "",
+    parseOfficialNoticeText: () => null
+  });
+
+  assert.equal(result.byCode["018738"], undefined);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.errors[0].noticeId, newId);
+  assert.equal(result.pdfEventCache.entries[`11:${newId}`], undefined);
+});
+
+test("downloads one shared announcement id only once per run", async () => {
+  const noticeId = "AN202606231823757896";
+  let downloads = 0;
+  const result = await collectAnnouncementIndexNoticeEvents([
+    { code: "050025", name: "测试标普500联接A", index: "sp500" },
+    { code: "018738", name: "另一名称标普500联接E", index: "sp500" }
+  ], {
+    concurrency: 2,
+    parserVersion: 11,
+    pdfEventCache: { schemaVersion: 1, entries: {} },
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [{ NEWCATEGORY: "5", ID: noticeId, TITLE: "调整大额申购公告", PUBLISHDATEDesc: "2026-06-23" }] }),
+    fetchBuffer: async () => { downloads += 1; await new Promise((resolve) => setTimeout(resolve, 10)); return Buffer.from("shared"); },
+    extractPdfText: async () => "shared",
+    parseOfficialNoticeText: () => ({ parsed: true, shareCodes: ["050025", "018738"], limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "050025": { amount: 100, currency: "CNY" }, "018738": { amount: 100, currency: "CNY" } } }] })
+  });
+
+  assert.equal(downloads, 1);
+  assert.ok(result.byCode["050025"]);
+  assert.ok(result.byCode["018738"]);
+});
+
+test("invalidates parsed event cache entries after a parser version change", async () => {
+  const noticeId = "AN202606231823757896";
+  let downloads = 0;
+  const result = await collectAnnouncementIndexNoticeEvents([
+    { code: "018738", name: "测试标普500联接E", index: "sp500" }
+  ], {
+    concurrency: 1,
+    parserVersion: 11,
+    pdfEventCache: {
+      schemaVersion: 1,
+      entries: {
+        [`10:${noticeId}`]: { noticeId, url: `https://pdf.dfcfw.com/pdf/H2_${noticeId}_1.pdf`, parserVersion: 10, parsed: { parsed: true } }
+      }
+    },
+    fetchText: async () => JSON.stringify({ ErrCode: 0, Data: [{ NEWCATEGORY: "5", ID: noticeId, TITLE: "调整大额申购公告", PUBLISHDATEDesc: "2026-06-23" }] }),
+    fetchBuffer: async () => { downloads += 1; return Buffer.from("fresh"); },
+    extractPdfText: async () => "fresh",
+    parseOfficialNoticeText: () => ({ parsed: true, shareCodes: ["018738"], limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { "018738": { amount: 100, currency: "CNY" } } }] })
+  });
+
+  assert.equal(downloads, 1);
+  assert.ok(result.pdfEventCache.entries[`11:${noticeId}`]);
+});
+
+test("limits concurrent PDF downloads independently from index concurrency", async () => {
+  const funds = [
+    { code: "100001", name: "测试基金甲", index: "sp500" },
+    { code: "100002", name: "测试基金乙", index: "sp500" },
+    { code: "100003", name: "测试基金丙", index: "sp500" }
+  ];
+  const ids = {
+    "100001": "AN202606231823757891",
+    "100002": "AN202606231823757892",
+    "100003": "AN202606231823757893"
+  };
+  let active = 0;
+  let maxActive = 0;
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    concurrency: 3,
+    pdfConcurrency: 2,
+    parserVersion: 11,
+    pdfEventCache: { schemaVersion: 1, entries: {} },
+    fetchText: async (url) => {
+      const code = new URL(url).searchParams.get("fundcode");
+      return JSON.stringify({ ErrCode: 0, Data: [{ NEWCATEGORY: "5", ID: ids[code], TITLE: "调整大额申购公告", PUBLISHDATEDesc: "2026-06-23" }] });
+    },
+    fetchBuffer: async (url) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      active -= 1;
+      const code = Object.keys(ids).find((item) => url.includes(ids[item]));
+      return Buffer.from(code);
+    },
+    extractPdfText: async (buffer) => buffer.toString(),
+    parseOfficialNoticeText: (code) => ({ parsed: true, shareCodes: [code], limits: [{ scope: "fund-manager-general", channels: [], perShareLimits: { [code]: { amount: 100, currency: "CNY" } } }] })
+  });
+
+  assert.equal(maxActive, 2);
+  assert.equal(result.diagnostics.downloadedNoticeCount, 3);
+});
+
 test("discovers share-specific notices from every share-code index", async () => {
   const funds = [
     { code: "006479", name: "测试纳斯达克100基金C", index: "nasdaq100" },
