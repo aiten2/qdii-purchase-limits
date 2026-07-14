@@ -202,6 +202,7 @@ module.exports = {
   fetchText,
   htmlToText,
   inferShareClass,
+  mapLimit,
   parseAmount,
   parseFundCatalog,
   parsePurchasePage,

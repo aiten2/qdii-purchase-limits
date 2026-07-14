@@ -217,7 +217,8 @@ async function runQuery(options) {
     index: "all",
     includeUsd: false,
     includeEtf: false,
-    concurrency: 2,
+    concurrency: 4,
+    retries: 2,
     minCoverage: 0.9,
     timezone: "Asia/Shanghai",
     save: true,
@@ -425,7 +426,7 @@ async function runQuery(options) {
     health,
     exitCode: health.status === "ok" ? 0 : 2
   };
-  if (settings.save && health.status === "ok" && pendingOfficialCache && pendingOfficialCachePath) {
+  if (settings.save && pendingOfficialCache && pendingOfficialCachePath) {
     writeAtomic(pendingOfficialCachePath, `${JSON.stringify(pendingOfficialCache, null, 2)}\n`);
   }
   if (settings.save) savePayload(settings.outputDir, scope, payload, snapshot, previousState, settings.historyLimit, health.status === "ok");

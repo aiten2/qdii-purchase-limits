@@ -82,6 +82,56 @@ test("collects and parses announcement events without manual web browsing", asyn
   assert.equal(result.byCode["015300"][0].source, "公开公告索引");
 });
 
+test("limits announcement group work to the configured concurrency", async () => {
+  const funds = [
+    { code: "100001", name: "测试纳斯达克100基金甲A", index: "nasdaq100" },
+    { code: "100002", name: "测试纳斯达克100基金乙A", index: "nasdaq100" },
+    { code: "100003", name: "测试纳斯达克100基金丙A", index: "nasdaq100" }
+  ];
+  let active = 0;
+  let maxActive = 0;
+  const result = await collectAnnouncementIndexNoticeEvents(funds, {
+    concurrency: 2,
+    indexRetries: 0,
+    fetchText: async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      return JSON.stringify({ ErrCode: 0, Data: [] });
+    },
+    fetchBuffer: async () => Buffer.alloc(0),
+    extractPdfText: async () => "",
+    parseOfficialNoticeText: () => null
+  });
+
+  assert.equal(maxActive, 2);
+  assert.equal(result.coverage.checked, 3);
+});
+
+test("retries a transient announcement index failure", async () => {
+  let attempts = 0;
+  const result = await collectAnnouncementIndexNoticeEvents([
+    { code: "100001", name: "测试纳斯达克100基金A", index: "nasdaq100" }
+  ], {
+    concurrency: 1,
+    indexRetries: 2,
+    indexRetryBaseMs: 0,
+    fetchText: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("公开公告索引 HTTP 503");
+      return JSON.stringify({ ErrCode: 0, Data: [] });
+    },
+    fetchBuffer: async () => Buffer.alloc(0),
+    extractPdfText: async () => "",
+    parseOfficialNoticeText: () => null
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.coverage.checked, 1);
+});
+
 test("discovers share-specific notices from every share-code index", async () => {
   const funds = [
     { code: "006479", name: "测试纳斯达克100基金C", index: "nasdaq100" },

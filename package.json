@@ -1,6 +1,6 @@
 {
   "name": "qdii-purchase-limits",
-  "version": "1.12.4",
+  "version": "1.12.5",
   "private": true,
   "description": "Agent Skill for querying public QDII purchase limits by sales channel.",
   "license": "MIT",

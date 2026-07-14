@@ -42,6 +42,18 @@ test("official source coverage only exposes active announcement sources", async 
   });
   assert.deepEqual(Object.keys(result.sourceCoverage).sort(), ["announcementIndex", "managerWebsites"]);
 });
+
+test("passes the configured concurrency to the announcement collector", async () => {
+  let receivedConcurrency = null;
+  await collectLatestOfficialNotices([], {
+    concurrency: 4,
+    announcementIndexFetcher: async (_funds, options) => {
+      receivedConcurrency = options.concurrency;
+      return { byCode: {}, errors: [], checkedCodes: [], coverage: { eligible: 0, checked: 0, found: 0, errors: 0 } };
+    }
+  });
+  assert.equal(receivedConcurrency, 4);
+});
 const { compareOfficialLimit } = require("../scripts/lib/official-pdf");
 
 test("classifies limit, full suspension, resume, and holiday notices", () => {

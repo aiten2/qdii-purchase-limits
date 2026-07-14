@@ -224,6 +224,7 @@ async function collectLatestOfficialNotices(funds, options) {
     extractPdfText: settings.extractPdfText || extractPdfText,
     parseOfficialNoticeText,
     classifyNoticeTitle,
+    concurrency: settings.concurrency,
     maxNotices: settings.maxAnnouncementNotices
   });
   const withAnnouncementByCode = {};

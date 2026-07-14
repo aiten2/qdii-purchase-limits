@@ -1,4 +1,5 @@
 const https = require("node:https");
+const { mapLimit } = require("./sources");
 
 const ANNOUNCEMENT_API_URL = "https://api.fund.eastmoney.com/f10/JJGG";
 const ANNOUNCEMENT_PDF_BASE_URL = "https://pdf.dfcfw.com/pdf";
@@ -111,8 +112,25 @@ function repairAnnouncementDate(parsed, date) {
   });
 }
 
+async function fetchFundNotices(fund, settings) {
+  const fetcher = settings.fetchText || fetchAnnouncementText;
+  let lastError;
+  for (let attempt = 0; attempt <= settings.indexRetries; attempt += 1) {
+    try {
+      const source = await fetcher(buildAnnouncementApiUrl(fund.code), settings);
+      return parseAnnouncementIndex(source, settings).slice(0, settings.maxNotices);
+    } catch (error) {
+      lastError = error;
+      if (attempt < settings.indexRetries && settings.indexRetryBaseMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, settings.indexRetryBaseMs * (attempt + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function collectAnnouncementIndexNoticeEvents(funds, options) {
-  const settings = Object.assign({ maxNotices: 30 }, options);
+  const settings = Object.assign({ maxNotices: 30, concurrency: 2, indexRetries: 2, indexRetryBaseMs: 500 }, options);
   const unique = [...new Map((funds || []).map((fund) => [fund.code, fund])).values()];
   const groups = new Map();
   unique.forEach((fund) => {
@@ -123,14 +141,14 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
   const byCode = {};
   const errors = [];
   const checkedCodes = new Set();
-  for (const groupFunds of groups.values()) {
+  await mapLimit([...groups.values()], settings.concurrency, async (groupFunds) => {
     const noticeMap = new Map();
     const indexErrors = new Map();
     for (const fund of groupFunds) {
       try {
-        const source = await (settings.fetchText || fetchAnnouncementText)(buildAnnouncementApiUrl(fund.code), settings);
+        const notices = await fetchFundNotices(fund, settings);
         checkedCodes.add(fund.code);
-        parseAnnouncementIndex(source, settings).slice(0, settings.maxNotices).forEach((notice) => {
+        notices.forEach((notice) => {
           if (!noticeMap.has(notice.id)) noticeMap.set(notice.id, notice);
         });
       } catch (error) {
@@ -191,7 +209,7 @@ async function collectAnnouncementIndexNoticeEvents(funds, options) {
     } catch (error) {
       groupFunds.forEach((fund) => errors.push({ code: fund.code, source: "announcement-index", stage: "index", message: error.message }));
     }
-  }
+  });
   return {
     byCode,
     errors,
@@ -211,6 +229,7 @@ module.exports = {
   buildAnnouncementPdfUrl,
   collectAnnouncementIndexNoticeEvents,
   fetchAnnouncementText,
+  fetchFundNotices,
   eventCoveredCodes,
   parseAnnouncementIndex,
   productKey,

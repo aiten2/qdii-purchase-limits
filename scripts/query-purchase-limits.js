@@ -15,7 +15,7 @@ const HELP = `QDII 指数基金申购限额查询
   --include-etf                 包含场内 ETF（单独标注交易路径）
   --channels FILE               合并未过期的人工核验渠道 JSON
   --output-dir DIR              输出目录
-  --concurrency N               并发数，默认 2
+  --concurrency N               并发数，默认 4
   --min-coverage N              最低完整率，默认 0.9
   --history-limit N             保留历史快照数，默认 90
   --details                     输出暂停、不可买和未知项目的完整明细
@@ -39,7 +39,7 @@ function parseArgs(argv) {
     includeUsd: false,
     includeEtf: false,
     outputDir: process.env.QDII_LIMIT_DATA_DIR || path.join(os.homedir(), ".qdii-purchase-limits"),
-    concurrency: 2,
+    concurrency: 4,
     minCoverage: 0.9,
     historyLimit: 90,
     details: false,

@@ -34,7 +34,7 @@ test("parses public CLI options", () => {
   assert.equal(args.save, false);
   assert.equal(args.officialNotices, true);
   assert.equal(args.force, false);
-  assert.equal(parseArgs([]).concurrency, 2);
+  assert.equal(parseArgs([]).concurrency, 4);
   assert.throws(() => parseArgs(["--no-official-notices"]), /未知参数/);
   const forced = parseArgs(["--force"]);
   assert.equal(forced.force, true);
@@ -144,7 +144,7 @@ test("invalidates announcement caches created by an older parser version", async
   assert.equal(cache.version, OFFICIAL_NOTICE_CACHE_VERSION);
 });
 
-test("does not replace the official notice cache after a degraded query", async () => {
+test("keeps successful official notices in cache after a degraded query", async () => {
   const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "qdii-degraded-notice-cache-"));
   const cachePath = path.join(outputDir, "official-notice-cache.json");
   const originalCache = `${JSON.stringify({
@@ -173,7 +173,10 @@ test("does not replace the official notice cache after a degraded query", async 
   });
 
   assert.equal(payload.health.status, "degraded");
-  assert.equal(fs.readFileSync(cachePath, "utf8"), originalCache);
+  const updatedCache = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+  assert.equal(updatedCache.byCode["019441"].notice.id, "fresh");
+  assert.equal(updatedCache.byCode["017641"], undefined);
+  assert.equal(payload.changesEvaluated, false);
 });
 
 test("does not turn a transient fetch failure into a status change or overwrite the last valid baseline", async () => {
