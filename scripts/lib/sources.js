@@ -174,8 +174,16 @@ async function collectFundStatuses(funds, options) {
   const rows = await mapLimit(funds, options.concurrency || 2, async (fund) => {
     const sourceUrl = `https://fund.eastmoney.com/${fund.code}.html`;
     try {
-      const html = await (options.fetchText ? options.fetchText(sourceUrl) : fetchText(sourceUrl, options));
-      return parsePurchasePage(html, fund, queriedAt);
+      const pageRetries = Number.isInteger(options.pageRetries) ? options.pageRetries : 2;
+      const retryBaseMs = Number.isFinite(options.pageRetryBaseMs) ? options.pageRetryBaseMs : 500;
+      for (let attempt = 0; attempt <= pageRetries; attempt += 1) {
+        const html = await (options.fetchText ? options.fetchText(sourceUrl) : fetchText(sourceUrl, options));
+        const row = parsePurchasePage(html, fund, queriedAt);
+        const retryableShape = ["unverified-page-shape", "limit-amount-missing"].includes(row.dataQuality);
+        if (!retryableShape || attempt === pageRetries) return row;
+        const backoff = retryBaseMs * (2 ** attempt) + (retryBaseMs ? Math.floor(Math.random() * 125) : 0);
+        await new Promise((resolve) => setTimeout(resolve, backoff));
+      }
     } catch (error) {
       errors.push({ code: fund.code, sourceUrl, message: error.message });
       return Object.assign({}, fund, {

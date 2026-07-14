@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const {
+  collectFundStatuses,
   parseFundCatalog,
   parsePurchasePage,
   validateSourceTarget
@@ -75,6 +76,48 @@ test("does not call a limited fund verified when no limit amount can be extracte
   );
   assert.equal(row.status, "unknown");
   assert.equal(row.dataQuality, "limit-amount-missing");
+});
+
+test("retries a successful response whose purchase fields are temporarily missing", async () => {
+  let attempts = 0;
+  const result = await collectFundStatuses([{
+    code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", index: "nasdaq100", currency: "CNY", route: "otc", variant: "standard"
+  }], {
+    queriedAt: "2026-07-12T10:00:00.000Z",
+    concurrency: 1,
+    pageRetryBaseMs: 0,
+    fetchText: async () => {
+      attempts += 1;
+      return attempts === 1
+        ? "<html><body>页面维护中</body></html>"
+        : "<div>交易状态：限大额 单日累计购买上限10元</div>";
+    }
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(result.rows[0].status, "limited");
+  assert.equal(result.rows[0].limitAmount, 10);
+  assert.equal(result.errors.length, 0);
+});
+
+test("keeps a persistently incomplete successful response unknown after bounded retries", async () => {
+  let attempts = 0;
+  const result = await collectFundStatuses([{
+    code: "019441", name: "万家纳斯达克100指数发起式(QDII)A", index: "nasdaq100", currency: "CNY", route: "otc", variant: "standard"
+  }], {
+    queriedAt: "2026-07-12T10:00:00.000Z",
+    concurrency: 1,
+    pageRetryBaseMs: 0,
+    fetchText: async () => {
+      attempts += 1;
+      return "<html><body>页面维护中</body></html>";
+    }
+  });
+
+  assert.equal(attempts, 3);
+  assert.equal(result.rows[0].status, "unknown");
+  assert.equal(result.rows[0].dataQuality, "unverified-page-shape");
+  assert.equal(result.errors.length, 0);
 });
 
 test("accepts only HTTPS Eastmoney public source targets", () => {
